@@ -1,0 +1,32 @@
+{
+  "comandos": {
+    "pesquisar": [
+      "pesquisar",
+      "youtube",
+      "google",
+      "youtube",
+      "piratebay",
+      "piratebaysearch",
+      "piratebaytpb",
+      "abrirsite"
+    ]
+  },
+  "sites": {
+    "google": "https://www.google.com",
+    "youtube": "https://www.youtube.com",
+    "piratebay": "https://thepiratebay.org"
+  },
+  "buscas": {
+    "piratebaysearch": "torrent-search-mcp",
+    "piratebaytpb": "ThePirateBay"
+  },
+  "usuarios": {
+    "daniel": {
+      "senha_hash": "5e5c81f71e3d374f169b69345d6c880b48d01842a72fdf81ab62c31b2b9901f3",
+      "salt": "8b55c12995c682ef",
+      "cpf": "994.443.620-86",
+      "cep": "62362-974",
+      "criado_em": "22/08/2026 16:40:19"
+    }
+  }
+}
