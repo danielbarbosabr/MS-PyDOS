@@ -1,86 +1,92 @@
-# MS-PyDOS
+# ⚙️ MS-PyDOS
 
-Simulador de sistema operacional escrito em Python (terminal interativo), com:
-comandos em português, gerenciamento de processos, memória, sistema de arquivos,
-recursos compartilhados, semáforos, log, estatísticas e uma área de pesquisa
-(Google, YouTube, Pirate Bay e ativador MAS).
+[![Status](https://img.shields.io/badge/status-concluído-brightgreen)](https://github.com/seu-usuario/MS-PyDOS)
+[![Licença](https://img.shields.io/badge/licença-MIT-yellow)](LICENSE)
+[![Python](https://img.shields.io/badge/Python-3.7%2B-3776AB?logo=python&logoColor=white)](https://python.org)
+[![Deployments](https://img.shields.io/badge/deployments-1-blue)](https://github.com/seu-usuario/MS-PyDOS/deployments)
 
-O arquivo principal do aplicativo é **`MS-PyDOS.py`** (contém todo o código do MS-PyDOS).
+![Terminal](https://img.shields.io/badge/Interface-Terminal-4EAA25?logo=gnometerminal&logoColor=white)
+![POO](https://img.shields.io/badge/Paradigma-OO-9B59B6?logo=python&logoColor=white)
+![Conceitos](https://img.shields.io/badge/Conceitos-SO-FF6F00?logo=linux&logoColor=white)
 
-## Como funciona (Instalar x Iniciar)
+---
 
-Os instaladores têm um menu com 3 opções:
+## <img src="https://api.iconify.design/bi/info-circle-fill.svg?color=%234FC3F7" width="20" height="20"> Sobre o Projeto
 
-- **[1] Instalar** → verifica o Python (reutiliza se já existir, ou instala
-  automaticamente via `winget`/instalador oficial no Windows ou `apt`/`dnf`/
-  `pacman`/`zypper` no Linux), cria o ambiente virtual (`venv`), prepara as
-  dependências, cria os atalhos e **já abre o MS-PyDOS automaticamente** ao
-  terminar.
-- **[2] Iniciar** → apenas abre o MS-PyDOS usando o Python do `venv` que o
-  "Instalar" já preparou. Não baixa nem instala nada. Se ainda não tiver
-  instalado, avisa para rodar a opção [1] primeiro.
-- **[3] Sair**
+O **MS-PyDOS** é um **Simulador de Sistema Operacional** desenvolvido em Python com finalidade educacional. Ele foi criado como parte de um **Projeto Integrador** do curso de graduação, com o objetivo de demonstrar, na prática, os principais conceitos teóricos de Sistemas Operacionais.
 
-Ou seja: da primeira vez use **Instalar** (ele cuida de tudo, inclusive do
-Python, e abre o app sozinho). Depois, use **Iniciar** para abrir rápido, ou o
-atalho do Menu Iniciar / Área de Trabalho / `.desktop`. Nenhuma execução depende
-do `python`/`python3` estar no PATH: sempre usa o interpretador dentro do
-`venv` (ex.: `venv\Scripts\python.exe` ou `venv/bin/python`).
+O simulador funciona como um terminal interativo que replica o gerenciamento de recursos de um SO real, permitindo que o usuário:
+- Gerencie **processos**, seus estados e prioridades.
+- Execute o **escalonamento Round Robin** com um quantum definido.
+- Controle a **memória** usando o algoritmo **First Fit**.
+- Manipule um **sistema de arquivos** simplificado.
+- Solicite e libere **recursos** (impressora, disco, fita).
+- Utilize **semáforos** para demonstrar exclusão mútua.
+- Acompanhe a simulação através de **logs** e **estatísticas** em tempo real.
 
-## Arquivo único para os dois sistemas
+O projeto não executa um sistema operacional real, mas sim uma **simulação fiel dos mecanismos internos**, ideal para aprendizado e demonstração de conceitos fundamentais.
 
-`MS-PyDOS` é um launcher **universal** (um só arquivo serve para Windows e Linux):
+---
 
-- **Windows**: renomeie/copie para `MS-PyDOS.bat` e de duplo clique.
-- **Linux**: rode `bash MS-PyDOS` (ou `sh MS-PyDOS`).
+## <img src="https://api.iconify.design/bi/rocket-takeoff-fill.svg?color=%234FC3F7" width="20" height="20"> Funcionalidades
 
-Ele detecta o sistema e chama o instalador nativo correto
-(`MS-PyDOS.Windows.bat` ou `MS-PyDOS.Linux.sh`).
+### <img src="https://api.iconify.design/bi/cpu-fill.svg?color=%234FC3F7" width="18" height="18"> Gerenciamento de Processos
+- Criação de processos com PID, nome, prioridade (1-10), tempo de CPU e memória alocada.
+- Controle de estados: **NOVO**, **PRONTO**, **EXECUTANDO**, **BLOQUEADO**, **TERMINADO**.
+- Armazenamento em **PCB (Process Control Block)**.
+- Listagem detalhada de todos os processos ativos.
+- Finalização manual de processos com liberação automática de recursos.
 
-## Instalação automática
+### <img src="https://api.iconify.design/bi/clock-fill.svg?color=%234FC3F7" width="18" height="18"> Escalonamento Round Robin
+- Implementação do algoritmo **Round Robin** com quantum configurável (padrão: 2 unidades).
+- Alternância automática entre processos na fila de prontos.
+- Relógio lógico para controle de tempo de simulação.
+- Processo atual identificado e controlado durante a execução.
 
-Não é necessário instalar o Python manualmente. Basta rodar o instalador:
-### Windows
+### <img src="https://api.iconify.design/bi/memory.svg?color=%234FC3F7" width="18" height="18"> Gerenciamento de Memória
+- Memória principal simulada de **1024 KB**, dividida em partições dinâmicas.
+- Algoritmo de alocação **First Fit**.
+- Painel de visualização com status de cada partição, endereços e utilização.
+- Cálculo de memória utilizada, livre e taxa de ocupação.
 
-Clique duas vezes em `MS-PyDOS.Windows.bat` (ou rode no Prompt como usuário normal).
-Ele vai:
-1. Detectar se o Python já existe; se não, instala silenciosamente (prefere
-   `winget`, com fallback para o instalador oficial).
-2. Criar um ambiente virtual (`venv`) e preparar as dependências.
-3. Criar atalhos no **Menu Iniciar** e na **Área de Trabalho** (apontando
-   direto para `venv\Scripts\python.exe`).
-4. **Abrir o MS-PyDOS automaticamente** ao concluir.
+### <img src="https://api.iconify.design/bi/folder-fill.svg?color=%234FC3F7" width="18" height="18"> Sistema de Arquivos
+- Criação, abertura, fechamento, leitura e escrita de arquivos.
+- Cada arquivo possui nome, tamanho, estado, PID dono, conteúdo e data de criação.
+- Listagem de todos os arquivos do sistema.
+- Fechamento automático de arquivos ao finalizar um processo.
 
-Depois, abra o **MS-PyDOS** pelo atalho ou pela opção [2] INICIAR, como um
-aplicativo normal.
+### <img src="https://api.iconify.design/bi/printer-fill.svg?color=%234FC3F7" width="18" height="18"> Gerenciamento de Recursos e Sincronização
+- Simulação de recursos de hardware: **Impressora, Disco e Fita**.
+- Solicitação e liberação de recursos com controle de exclusão mútua.
+- Implementação de **semáforos** com operações **P** (aquisição) e **V** (liberação).
+- Painel para visualizar o estado de todos os recursos e semáforos.
 
-### Linux
-No terminal, na pasta do projeto:
-```bash
-bash MS-PyDOS.Linux.sh
-```
-Ele detecta a distribuição (`apt`/`dnf`/`pacman`/`zypper`), instala o Python 3
-se preciso, cria o `venv` e cria um arquivo `.desktop`
-no menu de aplicativos.
+### <img src="https://api.iconify.design/bi/terminal-fill.svg?color=%234FC3F7" width="18" height="18"> Interface de Usuário (Terminal)
+- Menu principal intuitivo com acesso a todas as funcionalidades.
+- Submenus para cada área de gerenciamento (Processos, Memória, Arquivos, Recursos).
+- Entrada de dados validada com tratamento de erros.
+- Navegação simples para simular a operação de um sistema real.
 
-## Como usar
-- Digite `AJUDA` para ver os comandos (por categoria).
-- Categoria `pesquisar`: `PESQUISAR`, `YOUTUBE`, `PIRATEBAY`, `MASSGRAVE`.
-- Para sair: `SAIR`.
+### <img src="https://api.iconify.design/bi/bar-chart-fill.svg?color=%234FC3F7" width="18" height="18"> Logs e Estatísticas
+- **Log de eventos** completo com carimbo de tempo (clock da simulação).
+- Estatísticas consolidadas: tempo total, processos criados/finalizados/ativos, memória utilizada, quantidade de arquivos.
+- Simulação automática com criação de processos de exemplo e execução de ciclos.
 
-## Gerar executável (opcional)
-Para o usuário final não precisar saber que é Python, instale o `pyinstaller`
-(dentro do `venv`: `venv\Scripts\pip install pyinstaller` no Windows ou
-`./venv/bin/pip install pyinstaller` no Linux) e rode:
-```bash
-# Windows
-venv\Scripts\pyinstaller --onefile --console MS-PyDOS.py
-# Linux
-./venv/bin/pyinstaller --onefile MS-PyDOS.py
-```
-O binário ficará em `dist/`.
+---
 
-## Observações
-- O instalador **não apaga** arquivos, configurações ou dados do usuário.
-- Se o Python já estiver instalado, nenhuma instalação extra é feita.
-- Todos os caminhos são relativos; o app funciona em qualquer máquina.
+## <img src="https://api.iconify.design/bi/cpu-fill.svg?color=%234FC3F7" width="20" height="20"> Tecnologias Utilizadas
+
+| Camada | Tecnologia |
+|--------|------------|
+| **Linguagem** | Python 3.7+ |
+| **Paradigma** | Programação Orientada a Objetos (POO) |
+| **Estruturas de Dados** | Dataclasses, Listas, Dicionários, Enumerações |
+| **Conceitos de SO** | PCB, Round Robin, First Fit, Semáforos, Estados de Processo |
+| **Interface** | Terminal (CLI) com menus interativos |
+| **Documentação** | Markdown (README) |
+
+---
+
+## <img src="https://api.iconify.design/bi/folder2-open.svg?color=%234FC3F7" width="20" height="20"> Estrutura do Projeto
+
+A estrutura do projeto é **simples e autocontida**, com todo o código em um único arquivo para facilitar a execução e distribuição, conforme solicitado para o trabalho acadêmico.
