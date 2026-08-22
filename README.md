@@ -1,3 +1,5 @@
+<img width="1844" height="853" alt="image" src="https://github.com/user-attachments/assets/ca5d0328-dc17-4aaa-9a8d-4802741acf67" />
+
 # ⚙️ MS-PyDOS
 
 [![Status](https://img.shields.io/badge/status-concluído-brightgreen)](https://github.com/seu-usuario/MS-PyDOS)
