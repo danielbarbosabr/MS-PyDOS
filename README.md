@@ -5,7 +5,6 @@
 [![Status](https://img.shields.io/badge/status-concluído-brightgreen)](https://github.com/seu-usuario/MS-PyDOS)
 [![Licença](https://img.shields.io/badge/licença-MIT-yellow)](LICENSE)
 [![Python](https://img.shields.io/badge/Python-3.7%2B-3776AB?logo=python&logoColor=white)](https://python.org)
-[![Deployments](https://img.shields.io/badge/deployments-1-blue)](https://github.com/seu-usuario/MS-PyDOS/deployments)
 
 ![Terminal](https://img.shields.io/badge/Interface-Terminal-4EAA25?logo=gnometerminal&logoColor=white)
 ![POO](https://img.shields.io/badge/Paradigma-OO-9B59B6?logo=python&logoColor=white)
