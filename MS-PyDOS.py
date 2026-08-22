@@ -10,6 +10,8 @@ import socket
 import shutil
 import webbrowser
 import hashlib
+import threading
+import atexit
 from urllib.parse import quote_plus
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -1265,6 +1267,7 @@ ABREVIACOES_COMANDOS = {
     "memtest": "testarmemoria",
     "touch": "criararquivoso",
     "open": "abrirarquivo",
+    "recursos": "recursos",
     "close": "fechararquivo",
     "write": "escreverarquivo",
     "cat": "lerarquivo",
@@ -1326,20 +1329,24 @@ CATEGORIAS_AJUDA = {
         ("limparcpu", "Resetar ciclos da CPU para 0"),
         ("pausa", "Pausar até o usuário pressionar ENTER"),
         ("ams", "Executar varredura do Serviço Anti-Malware"),
+        ("configuracoes", "Abrir o Painel de Configurações (Wi-Fi, Bluetooth, Rede, Sistema)"),
+        ("limpar", "Limpar arquivos temporários e cache do sistema (LIMPAR)"),
+        ("limpararmazenamento", "Limpar tudo: temp, cache e armazenamento - Downloads/Lixeira (LIMPARARMAZENAMENTO)"),
         ("sair", "Sair do MS-PyDOS"),
     ],
     "memoria": [
         ("carregarram", "Carregar chave-valor na RAM (CARREGARRAM chave valor)"),
         ("limparram", "Limpar todo o conteúdo da RAM"),
         ("mostrarram", "Exibir conteúdo atual da RAM"),
+        ("limpararmazenamento", "Limpar tudo: temp, cache e armazenamento - Downloads/Lixeira (LIMPARARMAZENAMENTO)"),
     ],
     "aplicativos": [
         ("imprimir", "Imprimir texto na tela (IMPRIMIR texto)"),
         ("editar", "Abrir o editor de texto"),
         ("executar", "Executar um arquivo de aplicação (EXECUTAR nomearquivo)"),
-        ("abrir", "Abrir um app real do sistema (ABRIR calculadora/navegador/bloconotas/explorador/terminal/bluetooth/wifi)"),
+        ("abrir", "Abrir um aplicativo real do sistema (ABRIR <nome>)"),
         ("listaraplicativos", "Listar os aplicativos REALMENTE instalados no sistema operacional"),
-        ("configuracoes", "Abrir o Painel de Configurações (Wi-Fi, Bluetooth, Rede, Pesquisar na Internet, Sistema)"),
+        ("recursos", "Ver os recursos abertos pelo MS-PyDOS (RECURSOS)"),
     ],
     "pesquisar": [
         ("pesquisar", "Pesquisar no Google (PESQUISAR termo de busca)"),
@@ -1569,6 +1576,133 @@ APLICATIVOS = {
                      "linux": ["nm-connection-editor"]},
 }
 
+# ============================================================
+# INTEGRAÇÃO DE RECURSOS EXTERNOS (abertos "DENTRO" do MS-PyDOS)
+# ------------------------------------------------------------
+# Tudo o que o MS-PyDOS abre (apps reais, sites) é registrado aqui para que o
+# sistema continue rodando em segundo plano e avise automaticamente quando o
+# recurso for fechado, preservando o estado da sessão e evitando "janelas perdidas".
+# Programas GUI não podem ser embutidos num terminal; o melhor disponível é
+# monitorá-los e manter o MS-PyDOS como "host" da sessão.
+# ============================================================
+recursos_abertos = []            # {nome, tipo, proc, monitoravel, pid, inicio}
+_notificacoes_pendentes = []      # mensagens de retorno exibidas antes do prompt
+_lock_mspydos = None
+
+
+def _processo_vivo(pid):
+    if not pid or pid <= 0:
+        return False
+    try:
+        if os.name == "nt":
+            import ctypes
+            handle = ctypes.windll.kernel32.OpenProcess(0x0400, False, pid)
+            if not handle:
+                return False
+            codigo = ctypes.c_ulong()
+            ctypes.windll.kernel32.GetExitCodeProcess(handle, ctypes.byref(codigo))
+            ctypes.windll.kernel32.CloseHandle(handle)
+            return codigo.value == 259  # STILL_ACTIVE
+        else:
+            os.kill(pid, 0)
+            return True
+    except (OSError, ValueError, AttributeError, Exception):
+        return False
+
+
+def registrar_recurso(nome, tipo, proc, monitoravel=True):
+    """Registra um recurso aberto pelo MS-PyDOS e (se possível) monitora seu fechamento."""
+    item = {
+        "nome": nome,
+        "tipo": tipo,
+        "proc": proc,
+        "monitoravel": monitoravel,
+        "pid": proc.pid if proc else None,
+        "inicio": time.time(),
+    }
+    recursos_abertos.append(item)
+    if monitoravel and proc is not None:
+        def _monitor(rec=item):
+            try:
+                proc.wait()
+            except Exception:
+                pass
+            if rec in recursos_abertos:
+                recursos_abertos.remove(rec)
+            _notificacoes_pendentes.append(
+                f"[OK] Recurso '{rec['nome']}' foi fechado. Você continua no MS-PyDOS.")
+        threading.Thread(target=_monitor, daemon=True).start()
+    return item
+
+
+def abrir_site_integrado(url, nome):
+    """Abre um site no navegador externo, mas o registra como recurso do MS-PyDOS.
+    Navegadores não são monitoráveis de forma confiável, então o recurso fica
+    marcado como externo (o MS-PyDOS continua ativo em segundo plano)."""
+    try:
+        webbrowser.open(url)
+        print(f"Abrindo {nome} no navegador (recurso externo)...")
+        registrar_recurso(nome, "site", None, monitoravel=False)
+        print("O MS-PyDOS continua ativo. Use RECURSOS para ver os recursos abertos.")
+    except Exception as e:
+        print(f"[ERRO] Não foi possível abrir '{nome}': {e}")
+
+
+def listar_recursos_abertos():
+    desenhar_titulo("RECURSOS ABERTOS (integrados ao MS-PyDOS)", 64)
+    if not recursos_abertos:
+        print("  Nenhum recurso externo aberto no momento.")
+    else:
+        for r in recursos_abertos:
+            estado = "monitorado" if r["monitoravel"] else "externo (não monitorável)"
+            pid = r["pid"] if r["pid"] else "-"
+            print(f"  - {r['nome']:<16} [{r['tipo']}]  PID {pid:<6} {estado}")
+    desenhar_rodape(64)
+    print("MS-PyDOS continua em execução. Ao fechar um recurso, o foco retorna aqui.\n")
+
+
+def _liberar_lock():
+    global _lock_mspydos
+    if _lock_mspydos and os.path.exists(_lock_mspydos):
+        try:
+            os.remove(_lock_mspydos)
+        except OSError:
+            pass
+    _lock_mspydos = None
+
+
+def _adquirir_lock_unico():
+    """Garante uma única instância do MS-PyDOS (evita janelas/processos duplicados)."""
+    global _lock_mspydos
+    pasta = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data")
+    try:
+        os.makedirs(pasta, exist_ok=True)
+    except OSError:
+        return
+    caminho_lock = os.path.join(pasta, ".ms-pydos.lock")
+    try:
+        if os.path.exists(caminho_lock):
+            try:
+                with open(caminho_lock, "r") as f:
+                    pid_existente = int((f.read() or "0").strip() or 0)
+            except Exception:
+                pid_existente = 0
+            if pid_existente and _processo_vivo(pid_existente):
+                print(f"[AVISO] O MS-PyDOS já está em execução (PID {pid_existente}).")
+                print("Não foi aberto outro para evitar múltiplas instâncias.")
+                sys.exit(0)
+            try:
+                os.remove(caminho_lock)
+            except OSError:
+                pass
+        with open(caminho_lock, "w") as f:
+            f.write(str(os.getpid()))
+        _lock_mspydos = caminho_lock
+        atexit.register(_liberar_lock)
+    except Exception:
+        pass
+
+
 # --- PAINEL DE CONFIGURACOES (estilo Windows, visual DOS) ---
 LARGURA_CONFIG = 62
 
@@ -1670,7 +1804,34 @@ def menu_rede_internet():
             print(saida.strip()[:1200])
     except Exception:
         print("\n[AVISO] Detalhes de interface indisponíveis neste ambiente.")
+
+    print("\n--- Wi-Fi salvos neste computador (redes e senhas) ---")
+    salvos = listar_wifi_salvos()
+    if salvos:
+        for i, p in enumerate(salvos, 1):
+            senha = p["senha"] if p["senha"] else "(salva no sistema / não legível aqui)"
+            print(f" [{i}] {p['ssid']:<28} | Senha: {senha}")
+    else:
+        print(" Nenhum Wi-Fi salvo detectado (ou leitura não suportada neste ambiente).")
     _linha_config()
+    print(" [C] Conectar a um Wi-Fi salvo   [A] Abrir configurações de rede   [0] Voltar")
+    _linha_config()
+    escolha = input("\nSelecione uma opção: ").strip().lower()
+    if escolha == "0":
+        return
+    elif escolha == "a":
+        abrir_aplicativo("wifi")
+    elif escolha == "c":
+        if not salvos:
+            print("Não há Wi-Fi salvo para conectar.")
+        else:
+            num = input("Número da rede salva para conectar: ").strip()
+            if num.isdigit() and 1 <= int(num) <= len(salvos):
+                conectar_wifi_salvo(salvos[int(num) - 1]["ssid"])
+            else:
+                print("Opção inválida.")
+    elif escolha:
+        print("Opção inválida.")
     _pausar_config()
 
 def listar_redes_wifi():
@@ -1733,6 +1894,116 @@ def conectar_wifi(ssid):
     except Exception as e:
         print(f"[ERRO] Falha ao conectar: {e}")
 
+
+def listar_wifi_salvos():
+    """Lista as redes Wi-Fi SALVAS no sistema, com as senhas armazenadas (quando
+    o sistema operacional permitir a leitura)."""
+    sistema = platform.system()
+    perfis = []
+    try:
+        if sistema == "Windows":
+            saida = subprocess.run(["netsh", "wlan", "show", "profiles"],
+                                   capture_output=True, text=True, timeout=10).stdout
+            nomes = []
+            for linha in saida.splitlines():
+                if ":" in linha:
+                    nome = linha.rsplit(":", 1)[1].strip()
+                    if nome and "Perfil" not in nome and "interface" not in nome.lower():
+                        nomes.append(nome)
+            for nome in nomes:
+                senha = None
+                try:
+                    det = subprocess.run(["netsh", "wlan", "show", "profile",
+                                          f"name={nome}", "key=clear"],
+                                         capture_output=True, text=True, timeout=10).stdout
+                    for linha in det.splitlines():
+                        if (("Key" in linha or "Chave" in linha or
+                             "Content" in linha or "Conteúdo" in linha) and ":" in linha):
+                            valor = linha.rsplit(":", 1)[1].strip()
+                            if valor.lower() in ("presente", "present", "ausente",
+                                                 "absent", "não presente", "not present"):
+                                continue
+                            senha = valor
+                            break
+                except Exception:
+                    pass
+                perfis.append({"ssid": nome, "senha": senha})
+        elif sistema == "Linux":
+            saida = subprocess.run(["nmcli", "-t", "-f", "NAME,TYPE", "connection", "show"],
+                                   capture_output=True, text=True, timeout=10).stdout
+            for linha in saida.splitlines():
+                partes = linha.split(":")
+                if len(partes) == 2 and partes[1].strip() == "802-11-wireless":
+                    nome = partes[0].strip()
+                    senha = None
+                    try:
+                        det = subprocess.run(["nmcli", "-s", "-t", "-f",
+                                             "802-11-wireless-security.psk",
+                                             "connection", "show", nome],
+                                            capture_output=True, text=True, timeout=10).stdout
+                        for l in det.splitlines():
+                            if l.startswith("802-11-wireless-security.psk:"):
+                                senha = l.split(":", 1)[1].strip()
+                                break
+                    except Exception:
+                        pass
+                    perfis.append({"ssid": nome, "senha": senha})
+        elif sistema == "Darwin":
+            try:
+                saida = subprocess.run(
+                    ["defaults", "read",
+                     "/Library/Preferences/SystemConfiguration/com.apple.airport.preferences",
+                     "KnownNetworks"],
+                    capture_output=True, text=True, timeout=10).stdout
+                for linha in saida.splitlines():
+                    if "SSIDString" in linha and "=" in linha:
+                        nome = linha.split("=", 1)[1].strip().strip(";").strip('"')
+                        if nome:
+                            perfis.append({"ssid": nome, "senha": None})
+            except Exception:
+                pass
+    except FileNotFoundError:
+        pass
+    except Exception:
+        pass
+    return perfis
+
+
+def conectar_wifi_salvo(ssid):
+    """Conecta a uma rede Wi-Fi já SALVA no sistema, usando as credenciais armazenadas."""
+    sistema = platform.system()
+    try:
+        if sistema == "Windows":
+            res = subprocess.run(["netsh", "wlan", "connect", f"name={ssid}"],
+                                 capture_output=True, text=True, timeout=12)
+            saida = (res.stdout or res.stderr).strip()
+            print(saida or "Comando de conexão enviado ao Windows.")
+        elif sistema == "Linux":
+            try:
+                res = subprocess.run(["nmcli", "connection", "up", "id", ssid],
+                                     capture_output=True, text=True, timeout=20)
+                saida = (res.stdout or res.stderr).strip()
+                if res.returncode == 0:
+                    print(saida or f"Conectado a '{ssid}' (credenciais salvas).")
+                else:
+                    print("Não foi possível usar a credencial salva; tentando como rede disponível...")
+                    conectar_wifi(ssid)
+            except Exception:
+                conectar_wifi(ssid)
+        elif sistema == "Darwin":
+            res = subprocess.run(["networksetup", "-setairportnetwork", "en0", ssid],
+                                 capture_output=True, text=True, timeout=20)
+            saida = (res.stdout or res.stderr).strip()
+            print(saida or f"Solicitada conexão a '{ssid}' (credencial salva).")
+        else:
+            conectar_wifi(ssid)
+    except FileNotFoundError:
+        print("[ERRO] Ferramenta de rede não encontrada. Abrindo configurações do sistema...")
+        abrir_aplicativo("wifi")
+    except Exception as e:
+        print(f"[ERRO] Falha ao conectar: {e}")
+
+
 def menu_wifi():
     _titulo_config("WI-FI")
     print("Escaneando redes disponíveis...\n")
@@ -1756,23 +2027,42 @@ def menu_wifi():
         print("Opção inválida.")
     _pausar_config()
 
+def _enviar_arquivo_bluetooth(caminho_real):
+    """Abre a ferramenta REAL de envio Bluetooth do sistema operacional."""
+    sistema = platform.system().lower()
+    if sistema == "windows":
+        comandos = [["fsquirt", "-s", "-f", caminho_real], ["fsquirt", "-s"]]
+    elif sistema == "linux":
+        comandos = [["bluetooth-sendto", caminho_real], ["blueman-sendto", caminho_real]]
+    elif sistema == "darwin":
+        comandos = [["open", "-a", "Bluetooth File Exchange", caminho_real]]
+    else:
+        comandos = []
+    for cmd in comandos:
+        try:
+            proc = subprocess.Popen(cmd)
+            registrar_recurso("Envio Bluetooth: " + os.path.basename(caminho_real),
+                              "bluetooth", proc, monitoravel=True)
+            return True
+        except (FileNotFoundError, OSError):
+            continue
+    return False
+
+
 def menu_bluetooth(disco, diretorio_atual):
     _titulo_config("BLUETOOTH")
     print(" [1] Ativar / abrir configurações de Bluetooth do sistema")
-    print(" [2] Parear novo dispositivo (simulado)")
-    print(" [3] Compartilhar arquivo via Bluetooth (simulado)")
+    print(" [2] Parear novo dispositivo (abre configurações reais do sistema)")
+    print(" [3] Compartilhar arquivo via Bluetooth (envio real do sistema)")
     print(" [0] Voltar")
     _linha_config()
     escolha = input("\nSelecione uma opção: ").strip()
     if escolha == "1":
         abrir_aplicativo("bluetooth")
     elif escolha == "2":
-        nome_dispositivo = input("Nome do dispositivo para procurar/parear: ").strip() or "Dispositivo Desconhecido"
-        print(f"Procurando '{nome_dispositivo}'", end="", flush=True)
-        for _ in range(3):
-            time.sleep(0.35)
-            print(".", end="", flush=True)
-        print(f"\nDispositivo '{nome_dispositivo}' pareado com sucesso! (simulado)")
+        print("Abrindo as configurações REAIS de Bluetooth do sistema para parear...")
+        print("Conclua o pareamento na janela do sistema. O MS-PyDOS continua ativo.")
+        abrir_aplicativo("bluetooth")
     elif escolha == "3":
         nome_arquivo = input("Nome do arquivo do disco MS-PyDOS para compartilhar: ").strip()
         if not nome_arquivo:
@@ -1783,16 +2073,22 @@ def menu_bluetooth(disco, diretorio_atual):
             if conteudo in ("[Arquivo não encontrado]", "[É uma pasta]"):
                 print(f"Não foi possível compartilhar: {conteudo}")
             else:
-                tamanho = len(conteudo.encode("utf-8"))
-                print(f"Enviando '{nome_arquivo}' ({tamanho} bytes) via Bluetooth...")
-                largura_barra = 24
-                for i in range(largura_barra + 1):
-                    time.sleep(0.04)
-                    preenchido = "#" * i
-                    vazio = "-" * (largura_barra - i)
-                    pct = int(i / largura_barra * 100)
-                    print(f"\r[{preenchido}{vazio}] {pct:3d}%", end="", flush=True)
-                print(f"\nArquivo '{nome_arquivo}' enviado com sucesso! (simulado)")
+                import tempfile
+                tmp = os.path.join(tempfile.gettempdir(),
+                                  os.path.basename(nome_arquivo) or "arquivo.txt")
+                try:
+                    with open(tmp, "w", encoding="utf-8") as f:
+                        f.write(conteudo)
+                except OSError as e:
+                    print(f"[ERRO] Não foi possível exportar o arquivo: {e}")
+                else:
+                    if _enviar_arquivo_bluetooth(tmp):
+                        print(f"Abrindo o envio Bluetooth REAL de '{nome_arquivo}'...")
+                        print("Conclua a transferência na janela do sistema. "
+                              "O MS-PyDOS continua ativo.")
+                    else:
+                        print("[AVISO] Nenhuma ferramenta de envio Bluetooth encontrada neste sistema.")
+                        print("Abra manualmente em: Configurações > Bluetooth.")
     elif escolha == "0":
         return
     else:
@@ -1806,11 +2102,7 @@ def pesquisar_google(termo):
         print("Uso: PESQUISAR termo de busca")
         return
     url = f"https://www.google.com/search?q={quote_plus(termo)}"
-    try:
-        webbrowser.open(url)
-        print(f"Abrindo pesquisa por \"{termo}\" no Google...")
-    except Exception as e:
-        print(f"[ERRO] Não foi possível abrir o navegador: {e}")
+    abrir_site_integrado(url, f"Pesquisa Google: {termo}")
 
 def pesquisar_youtube(termo):
     termo = termo.strip()
@@ -1818,11 +2110,7 @@ def pesquisar_youtube(termo):
         print("Uso: YOUTUBE termo de busca")
         return
     url = f"https://www.youtube.com/results?search_query={quote_plus(termo)}"
-    try:
-        webbrowser.open(url)
-        print(f"Abrindo pesquisa por \"{termo}\" no YouTube...")
-    except Exception as e:
-        print(f"[ERRO] Não foi possível abrir o navegador: {e}")
+    abrir_site_integrado(url, f"Pesquisa YouTube: {termo}")
 
 def executar_massgrave():
     """Abre o Microsoft Activation Scripts (MAS) via PowerShell (get.activated.win)."""
@@ -1857,7 +2145,7 @@ def buscar_piratebay_mcp(termo):
         print(f"[ERRO] torrent-search-mcp indisponível: {e}")
         print("Dica: pip install torrent-search-mcp && playwright install --with-deps chromium")
         print("Abrindo fallback no navegador...")
-        webbrowser.open(f"https://thepiratebay.org/search?q={quote_plus(termo)}")
+        abrir_site_integrado(f"https://thepiratebay.org/search?q={quote_plus(termo)}", "The Pirate Bay")
 
 def abrir_site(nome_site):
     sites = {
@@ -1887,23 +2175,77 @@ def abrir_site(nome_site):
     }
     nome_lower = nome_site.lower().strip()
     if nome_lower in sites:
-        try:
-            webbrowser.open(sites[nome_lower])
-            print(f"Abrindo {nome_lower}...")
-        except Exception as e:
-            print(f"[ERRO] Não foi possível abrir o site: {e}")
+        abrir_site_integrado(sites[nome_lower], nome_lower)
     else:
         print(f"Site '{nome_site}' não encontrado na lista.")
         print("Sites disponíveis:", ", ".join(sorted(set(sites.keys()))))
 
-def menu_pesquisa_internet():
-    _titulo_config("PESQUISAR NA INTERNET")
-    termo = input("Digite o que deseja pesquisar: ").strip()
-    if not termo:
-        print("Pesquisa cancelada.")
-    else:
-        pesquisar_google(termo)
+def limpar_sistema():
+    _titulo_config("LIMPAR SISTEMA (TEMP / CACHE / ARMAZENAMENTO)")
+    print("Remove arquivos temporários, de cache e de armazenamento do sistema")
+    print("(Downloads, Lixeira, etc.). Arquivos em uso são ignorados.")
+    confirmar = input("Deseja continuar? (s/n): ").strip().lower()
+    if confirmar not in ("s", "sim", "y", "yes"):
+        print("Operação cancelada.")
+        _pausar_config()
+        return
+    sistema = platform.system()
+    base = os.path.expanduser("~")
+    locais = []
+    if sistema == "Windows":
+        locais = [
+            os.environ.get("TEMP"),
+            os.environ.get("TMP"),
+            os.path.join(base, "AppData", "Local", "Temp"),
+            os.path.join(base, "AppData", "Local", "Microsoft", "Windows", "INetCache"),
+            os.path.join(base, "AppData", "Local", "Microsoft", "Windows",
+                        "Temporary Internet Files"),
+            os.path.join(base, "Downloads"),
+            os.path.join(base, "AppData", "Local", "Microsoft", "Windows", "WER"),
+        ]
+        # Esvazia a Lixeira (best-effort, precisa de PowerShell)
+        try:
+            subprocess.run(["powershell", "-NoProfile", "-Command",
+                            "Clear-RecycleBin -Force -ErrorAction SilentlyContinue"],
+                           capture_output=True, timeout=25)
+        except Exception:
+            pass
+    elif sistema == "Linux":
+        locais = ["/tmp", os.path.join(base, ".cache"),
+                  os.path.join(base, ".local", "share", "Trash"),
+                  os.path.join(base, ".local", "share", "Trash", "files"),
+                  os.path.join(base, "Downloads")]
+    elif sistema == "Darwin":
+        locais = [os.environ.get("TMPDIR"), os.path.join(base, "Library", "Caches"),
+                  os.path.join(base, ".Trash"), os.path.join(base, "Downloads")]
+    locais = [p for p in locais if p]
+    removidos = 0
+    liberado = 0
+    for pasta in locais:
+        if not os.path.isdir(pasta):
+            continue
+        print(f"\nLimpando: {pasta}")
+        for raiz, subpastas, arquivos in os.walk(pasta, topdown=False):
+            for nome in arquivos:
+                caminho = os.path.join(raiz, nome)
+                try:
+                    try:
+                        liberado += os.path.getsize(caminho)
+                    except OSError:
+                        pass
+                    os.remove(caminho)
+                    removidos += 1
+                except OSError:
+                    pass
+            for nome in subpastas:
+                try:
+                    os.rmdir(os.path.join(raiz, nome))
+                except OSError:
+                    pass
+    print(f"\nConcluído. {removidos} arquivo(s) removido(s), "
+          f"{liberado // 1024} KB liberados (aprox.).")
     _pausar_config()
+
 
 def menu_sistema_config(cpu, ram, disco):
     _titulo_config("SISTEMA")
@@ -1917,6 +2259,16 @@ def menu_sistema_config(cpu, ram, disco):
     print(f"MS-PyDOS - Disco         : {info_disco['usado_kb']} / {info_disco['max_kb']} KB usados "
           f"({info_disco['total_arquivos']} arquivos)")
     _linha_config()
+    print(" [L] Limpar arquivos temporários e cache do sistema")
+    print(" [0] Voltar")
+    _linha_config()
+    escolha = input("\nSelecione uma opção: ").strip().lower()
+    if escolha == "l":
+        limpar_sistema()
+    elif escolha == "0":
+        return
+    else:
+        print("Opção inválida.")
     _pausar_config()
 
 def menu_configuracoes(cpu, ram, disco, diretorio_atual):
@@ -1925,8 +2277,7 @@ def menu_configuracoes(cpu, ram, disco, diretorio_atual):
         print(" [1] Rede e Internet")
         print(" [2] Wi-Fi")
         print(" [3] Bluetooth")
-        print(" [4] Pesquisar na Internet")
-        print(" [5] Sistema")
+        print(" [4] Sistema")
         print(" [0] Voltar ao terminal")
         _linha_config()
         escolha = input("\nSelecione uma opção: ").strip()
@@ -1937,8 +2288,6 @@ def menu_configuracoes(cpu, ram, disco, diretorio_atual):
         elif escolha == "3":
             menu_bluetooth(disco, diretorio_atual)
         elif escolha == "4":
-            menu_pesquisa_internet()
-        elif escolha == "5":
             menu_sistema_config(cpu, ram, disco)
         elif escolha == "0":
             print("Voltando ao terminal...")
@@ -2017,12 +2366,7 @@ def obter_aplicativos_instalados_sistema(limite=300):
     return apps
 
 def listar_aplicativos():
-    """Exibe os aplicativos REALMENTE instalados no sistema operacional atual e,
-    em seguida, quais atalhos o comando ABRIR sabe abrir diretamente."""
-    sistema = platform.system().lower()
-    mapa_sistema = {"windows": "nt", "darwin": "darwin", "linux": "linux"}
-    chave_sistema = mapa_sistema.get(sistema)
-
+    """Exibe os aplicativos REALMENTE instalados no sistema operacional atual."""
     desenhar_titulo("Aplicativos instalados no sistema", 68)
     apps_reais = obter_aplicativos_instalados_sistema()
     if apps_reais:
@@ -2032,35 +2376,41 @@ def listar_aplicativos():
     else:
         print("  Não foi possível detectar os aplicativos instalados neste ambiente")
         print("  (sistema não suportado ou sem permissão de leitura).")
-    print()
-    desenhar_divisoria(68)
-    print("  Atalhos rápidos suportados pelo comando ABRIR neste sistema:")
-    for nome in sorted(APLICATIVOS.keys()):
-        suportado = APLICATIVOS[nome].get(chave_sistema)
-        status = "disponível" if suportado else "não suportado neste sistema"
-        print(f"    {nome:<14} - {status}")
     desenhar_rodape(68)
-    print(f"Use ABRIR <nomeapp> para abrir um dos atalhos. Ex.: ABRIR {sorted(APLICATIVOS.keys())[0]}\n")
+    print("Use ABRIR <nome> para abrir qualquer aplicativo do sistema.\n")
 
 def abrir_aplicativo(nome):
     chave = nome.lower()
-    if chave not in APLICATIVOS:
-        disponiveis = ", ".join(sorted(APLICATIVOS.keys()))
-        print(f"Aplicativo desconhecido: {nome}")
-        print(f"Disponíveis: {disponiveis}")
-        return
     sistema = platform.system().lower()
     mapa_sistema = {"windows": "nt", "darwin": "darwin", "linux": "linux"}
     chave_sistema = mapa_sistema.get(sistema)
-    comando = APLICATIVOS[chave].get(chave_sistema)
-    if not comando:
-        print(f"'{nome}' não é suportado no seu sistema ({sistema}).")
+    # 1) atalho conhecido (comando exato por sistema)
+    if chave in APLICATIVOS and APLICATIVOS[chave].get(chave_sistema):
+        comando = APLICATIVOS[chave][chave_sistema]
+        try:
+            proc = subprocess.Popen(comando)
+            print(f"Abrindo {nome} (integrado ao MS-PyDOS em segundo plano)...")
+            registrar_recurso(nome, "aplicativo", proc, monitoravel=True)
+            print("O MS-PyDOS continua ativo. Use RECURSOS para ver o que está aberto.")
+        except FileNotFoundError:
+            print(f"[ERRO] '{nome}' não está instalado ou não foi encontrado no PATH.")
+        except Exception as e:
+            print(f"[ERRO] Não foi possível abrir '{nome}': {e}")
         return
+    # 2) qualquer aplicativo do sistema, pelo nome
+    if sistema == "windows":
+        comando = ["cmd", "/c", "start", "", nome]
+    elif sistema == "darwin":
+        comando = ["open", "-a", nome]
+    else:
+        comando = ["xdg-open", nome]
     try:
-        subprocess.Popen(comando)
-        print(f"Abrindo {nome}...")
+        proc = subprocess.Popen(comando)
+        print(f"Abrindo '{nome}' (integrado ao MS-PyDOS em segundo plano)...")
+        registrar_recurso(nome, "aplicativo", proc, monitoravel=True)
+        print("O MS-PyDOS continua ativo. Use RECURSOS para ver o que está aberto.")
     except FileNotFoundError:
-        print(f"[ERRO] '{nome}' não está instalado ou não foi encontrado no PATH.")
+        print(f"[ERRO] Não foi possível encontrar '{nome}' no sistema.")
     except Exception as e:
         print(f"[ERRO] Não foi possível abrir '{nome}': {e}")
 
@@ -2134,6 +2484,8 @@ def executar_comando(tokens, cpu, ram, disco, diretorio_atual):
             abrir_aplicativo(tokens[1])
     elif cmd == "listaraplicativos":
         listar_aplicativos()
+    elif cmd == "recursos":
+        listar_recursos_abertos()
     elif cmd == "pesquisar":
         if len(tokens) < 2:
             print("Uso: PESQUISAR termo de busca  (ex: PESQUISAR receita de bolo)")
@@ -2157,6 +2509,10 @@ def executar_comando(tokens, cpu, ram, disco, diretorio_atual):
         iniciar_editor(disco, ram, diretorio_atual)
     elif cmd == "cls":
         os.system("cls" if os.name == "nt" else "clear")
+    elif cmd == "limpar":
+        limpar_sistema()
+    elif cmd == "limpararmazenamento":
+        limpar_sistema()
     elif cmd == "ver":
         print("MS-PyDOS v1.0 - Máquina de Shopping")
     elif cmd == "data":
@@ -2530,7 +2886,18 @@ def executar_comando(tokens, cpu, ram, disco, diretorio_atual):
         if len(tokens) < 2:
             print("Uso: ABRIRARQUIVO nome")
         else:
-            simulador_ms.abrir_arquivo_so(tokens[1])
+            nome = tokens[1]
+            ok = simulador_ms.abrir_arquivo_so(nome)
+            if ok:
+                conteudo = simulador_ms.ler_arquivo_so(nome)
+                desenhar_titulo(f"ARQUIVO ABERTO DENTRO DO MS-PyDOS: {nome}", 70)
+                if conteudo:
+                    for linha in conteudo.splitlines()[:200]:
+                        print("  " + linha)
+                else:
+                    print("  (arquivo vazio)")
+                desenhar_rodape(70)
+                print("Arquivo aberto integrado à interface. Use FECHARARQUIVO para fechar a aba.")
     elif cmd == "fechararquivo":
         if len(tokens) < 2:
             print("Uso: FECHARARQUIVO nome")
@@ -2627,6 +2994,12 @@ def iniciar_terminal(cpu, ram, disco):
           f"Categorias disponíveis: {lista_categorias}\n")
     diretorio_atual = "/"
     while True:
+        if _notificacoes_pendentes:
+            for _msg in _notificacoes_pendentes:
+                print(_msg)
+            _notificacoes_pendentes.clear()
+        if recursos_abertos:
+            print(f"(Recursos abertos: {len(recursos_abertos)} - use RECURSOS para gerenciar)")
         try:
             comando = input(f"C:{diretorio_atual}> ").strip()
             tokens = cpu.executar(comando)
@@ -2642,6 +3015,7 @@ def iniciar_terminal(cpu, ram, disco):
 # --- INICIALIZAÇÃO (BOOT) ---
 def inicializar():
     global disco_obj, simulador_ms, gerenciador_usuarios, usuario_atual
+    _adquirir_lock_unico()
     dos_ligar_tela_azul()
     print("MS-PyDOS v1.0 - Máquina de Shopping - Inicializando...")
     time.sleep(0.1)
