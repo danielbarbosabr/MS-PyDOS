@@ -14,7 +14,7 @@
 
 ## <img src="https://api.iconify.design/bi/info-circle-fill.svg?color=%234FC3F7" width="20" height="20"> Sobre o Projeto
 
-O **MS-PyDOS** é um **Simulador de Sistema Operacional** desenvolvido em Python com finalidade educacional. Ele foi criado como parte de um **Projeto Integrador** do curso de graduação, com o objetivo de demonstrar, na prática, os principais conceitos teóricos de Sistemas Operacionais.
+O **MS-PyDOS** é um **Simulador de Sistema Operacional** desenvolvido em Python com finalidade educacional. Ele foi criado como parte de um **2º Projeto Integrador** do curso de graduação, com o objetivo de demonstrar, na prática, os principais conceitos teóricos de Sistemas Operacionais.
 
 O simulador funciona como um terminal interativo que replica o gerenciamento de recursos de um SO real, permitindo que o usuário:
 - Gerencie **processos**, seus estados e prioridades.
