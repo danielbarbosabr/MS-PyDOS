@@ -82,19 +82,26 @@ def _cor(codigo):
 
 COR_RESET = _cor("\033[0m")
 COR_FUNDO_AZUL = _cor("\033[44m")
-COR_TEXTO = _cor("\033[37m")
+# Fonte padrão (corpo do texto) em verde; separadores/bordas/títulos ficam em
+# branco brilhante; azul é usado como cor de destaque (ex.: assinatura), para o
+# esquema de cores do projeto ficar em branco, verde e azul.
+COR_TEXTO = _cor("\033[32m")
 COR_TEXTO_BRILHANTE = _cor("\033[1;37m")
 COR_AMARELO = _cor("\033[1;33m")
 COR_VERDE = _cor("\033[1;32m")
 COR_VERMELHO = _cor("\033[1;31m")
-COR_CIANO = _cor("\033[1;36m")
+COR_CIANO = _cor("\033[1;34m")
 COR_REVERSO = _cor("\033[7m")
 COR_REVERSO_OFF = _cor("\033[27m")
 
 def dos_ligar_tela_azul():
-    """Mantido por compatibilidade; o estilo atual (DOS 4.0 SELECT/Setup) usa o fundo
-    padrão do terminal em vez de forçar azul, então esta função não altera mais nada."""
-    pass
+    """Fixa a cor de TODA a sessão do terminal em verde (estilo monitor fósforo verde
+    dos terminais DOS monocromáticos clássicos), escrevendo o código ANSI uma única vez
+    no início do boot. Como códigos ANSI de cor persistem até um RESET explícito, isso
+    faz com que até prints sem cor definida (print() puro) saiam em verde, sem precisar
+    alterar cada chamada de print no programa inteiro."""
+    sys.stdout.write(COR_TEXTO)
+    sys.stdout.flush()
 
 def dos_desligar_tela_azul():
     sys.stdout.write(COR_RESET)
@@ -877,8 +884,8 @@ class SimuladorSO:
         self.log = []
         entrada_inicial = f"[{self.clock:>6}] Módulo de processos do MS-PyDOS inicializado com sucesso!"
         self.log.append(entrada_inicial)
-        print("Módulo de processos do MS-PyDOS inicializado com sucesso!")
-        print(f"  Memória virtual: {self.memoria_total} KB em {len(self.particoes)} partição(ões) | Quantum: {self.quantum}")
+        _pr("Módulo de processos do MS-PyDOS inicializado com sucesso!")
+        _pr(f"  Memória virtual: {self.memoria_total} KB em {len(self.particoes)} partição(ões) | Quantum: {self.quantum}")
 
     # ---------------- MEMÓRIA ----------------
     def criar_particoes(self):
@@ -1340,6 +1347,9 @@ class SimuladorSO:
 ABREVIACOES_COMANDOS = {
     # --- Arquivos e pastas (nomes clássicos do MS-DOS real) ---
     "dir": "listar",
+    # --- Elementos herdados do Apple ProDOS 2.4.3 (prodos8.com) ---
+    "catalog": "listar",     # CATALOG do ProDOS = listagem de arquivos/pastas (equivale a DIR)
+    "prefix": "cd",          # PREFIX do ProDOS = caminho/diretório atual (equivale a CD)
     "type": "tipo",
     "del": "apagar",
     "erase": "apagar",
@@ -1363,6 +1373,15 @@ ABREVIACOES_COMANDOS = {
     "run": "executar",
     "exec": "executar",
     "cd..": "cd",
+    "attrib": "atributos",
+    "chkdsk": "checardisco",
+    "scandisk": "checardisco",
+    "deltree": "apagarvore",
+    "doskey": "historico",
+    "fc": "comparar",
+    "mode": "modo",
+    "verify": "verificar",
+    "undelete": "restaurar",
     # --- Sistema ---
     "exit": "sair",
     "quit": "sair",
@@ -1440,6 +1459,9 @@ CATEGORIAS_AJUDA = {
         ("localizar", "Buscar um texto dentro de um arquivo (LOCALIZAR texto nomearquivo)"),
         ("ordenar", "Exibir as linhas de um arquivo em ordem alfabética (ORDENAR nomearquivo)"),
         ("comparar", "Comparar o conteúdo de dois arquivos (COMPARAR arquivo1 arquivo2)"),
+        ("atributos", "Ver/alterar atributos de um arquivo (ATRIBUTOS arquivo [+R|-R|+H|-H])"),
+        ("apagarvore", "Excluir uma pasta e todo o seu conteúdo, recursivamente"),
+        ("restaurar", "Restaurar o último arquivo apagado (equivalente ao UNDELETE)"),
     ],
     "sistema": [
         ("ajuda", "Mostrar esta ajuda (AJUDA ou AJUDA categoria)"),
@@ -1457,6 +1479,15 @@ CATEGORIAS_AJUDA = {
         ("ams", "Executar varredura do Serviço Anti-Malware"),
         ("configuracoes", "Abrir o Painel de Configurações (Wi-Fi, Bluetooth, Rede, Sistema)"),
         ("limpar", "Limpar arquivos temporários e cache do sistema (LIMPAR)"),
+        ("checardisco", "Verificar o disco e mostrar espaço usado/livre (equivalente ao CHKDSK)"),
+        ("historico", "Mostrar o histórico de comandos digitados (equivalente ao DOSKEY)"),
+        ("modo", "Ver/configurar o modo do console (equivalente ao MODE)"),
+        ("prompt", "Alterar o formato do prompt (PROMPT $P$G, $D, $T, $$, $_)"),
+        ("set", "Ver ou definir variáveis de ambiente (SET, SET CHAVE=valor)"),
+        ("path", "Ver ou definir o caminho de busca de programas (PATH)"),
+        ("subst", "Associar uma letra de unidade a uma pasta (SUBST letra: caminho)"),
+        ("sys", "Transferir arquivos de sistema para uma unidade (SYS unidade)"),
+        ("verificar", "Ativar/desativar a verificação de gravação (VERIFICAR ON|OFF)"),
         ("sair", "Sair do MS-PyDOS"),
     ],
     "memoria": [
@@ -1524,6 +1555,14 @@ disco_obj = None
 simulador_ms = None
 gerenciador_usuarios = None
 usuario_atual = None
+
+# --- ESTADO DOS COMANDOS "ESTILO MS-DOS REAL" (SET/PATH/PROMPT/VERIFY/SUBST/ATTRIB/UNDELETE/DOSKEY) ---
+variaveis_ambiente = {"PATH": "C:\\", "COMSPEC": "C:\\COMMAND.COM"}
+_prompt_formato = "$P$G"              # formato do PROMPT (padrão do MS-DOS: caminho + '>')
+_verificacao_ativa = False            # estado do VERIFY ON/OFF
+substituicoes_unidade = {}            # SUBST: letra -> caminho
+pilha_apagados = []                   # últimos arquivos apagados, para UNDELETE/RESTAURAR
+historico_ordenado = []               # comandos digitados em ordem, para DOSKEY/HISTORICO
 
 def registrar_comando(cmd, ram):
     cmd_lower = cmd.lower()
@@ -2606,7 +2645,7 @@ def abrir_aplicativo(nome):
 
 # --- EXECUTAR COMANDOS ---
 def executar_comando(tokens, cpu, ram, disco, diretorio_atual):
-    global usuario_atual, _ultimo_comando_invalido
+    global usuario_atual, _ultimo_comando_invalido, _prompt_formato, _verificacao_ativa
     _ultimo_comando_invalido = False
     if not tokens:
         return diretorio_atual
@@ -2866,12 +2905,35 @@ def executar_comando(tokens, cpu, ram, disco, diretorio_atual):
     elif cmd == "listar":
         disco.escrever_em_massa(ram.memoria)
         itens = disco.listar_diretorio(diretorio_atual)
-        if itens:
-            for item in itens:
-                caminho_item = diretorio_atual.rstrip("/") + "/" + item if diretorio_atual != "/" else "/" + item
-                print(f"<DIR> {item}" if disco.e_pasta(caminho_item) else f" {item}")
-        else:
-            print("Nenhum arquivo ou diretório.")
+        caminho_dir = "C:\\" if diretorio_atual == "/" else f"C:\\{diretorio_atual.strip('/').replace('/', chr(92)).upper()}"
+        agora = datetime.now().strftime("%d-%m-%Y  %H:%M")
+        print()
+        print(f" O volume na unidade C não tem nome" if not disco.rotulo else f" O volume na unidade C é {disco.rotulo}")
+        print(f" Diretório de {caminho_dir}")
+        print()
+        total_bytes = 0
+        total_arquivos = 0
+        total_pastas = 0
+        if diretorio_atual != "/":
+            print(f" {'.':<20}{'<DIR>':>10}   {agora}")
+            print(f" {'..':<20}{'<DIR>':>10}   {agora}")
+        for item in sorted(itens):
+            caminho_item = obter_caminho_absoluto(item, diretorio_atual)
+            if disco.e_pasta(caminho_item):
+                total_pastas += 1
+                print(f" {item.upper():<20}{'<DIR>':>10}   {agora}")
+            else:
+                conteudo = disco.ler_arquivo(caminho_item)
+                tamanho = len(conteudo.encode("utf-8")) if isinstance(conteudo, str) else 0
+                total_bytes += tamanho
+                total_arquivos += 1
+                print(f" {item.upper():<20}{tamanho:>10}   {agora}")
+        if not itens:
+            print(" Nenhum arquivo ou diretório.")
+        print()
+        info = disco.obter_info()
+        print(f"        {total_arquivos} arquivo(s)      {total_bytes} bytes")
+        print(f"        {total_pastas} pasta(s)   {info['livre_kb'] * 1024} bytes livres")
     elif cmd == "arvore":
         comando_arvore(diretorio_atual, disco)
     elif cmd == "criarpasta":
@@ -2931,9 +2993,20 @@ def executar_comando(tokens, cpu, ram, disco, diretorio_atual):
             print("Uso: APAGAR nomearquivo")
         else:
             nome_arquivo = obter_caminho_absoluto(tokens[1], diretorio_atual)
-            ram.memoria.pop(nome_arquivo, None)
-            disco.apagar_arquivo(nome_arquivo)
-            print(f"Excluído '{nome_arquivo}'")
+            secao_attr = _ler_secao(disco.arquivo, "atributos")
+            if "R" in secao_attr.get(nome_arquivo, []):
+                print(f"Acesso negado - arquivo somente leitura: {tokens[1]}")
+            else:
+                conteudo_antigo = ram.obter(nome_arquivo)
+                if conteudo_antigo is None:
+                    conteudo_antigo = disco.ler_arquivo(nome_arquivo)
+                if conteudo_antigo not in (None, "[Arquivo não encontrado]", "[É uma pasta]"):
+                    pilha_apagados.append((nome_arquivo, conteudo_antigo))
+                    if len(pilha_apagados) > 20:
+                        pilha_apagados.pop(0)
+                ram.memoria.pop(nome_arquivo, None)
+                disco.apagar_arquivo(nome_arquivo)
+                print(f"Excluído '{nome_arquivo}'")
     elif cmd == "carregarram":
         if len(tokens) < 3:
             print("Uso: CARREGARRAM chave valor")
@@ -2946,6 +3019,12 @@ def executar_comando(tokens, cpu, ram, disco, diretorio_atual):
         ram.limpar()
         print("RAM limpa.")
     elif cmd == "mostrarram":
+        info_ram = ram.obter_info()
+        print("Memória convencional:")
+        print(f"      Total   {info_ram['total_kb']:>10} KB")
+        print(f"      Em uso  {info_ram['usado_kb']:>10} KB")
+        print(f"      Livre   {info_ram['livre_kb']:>10} KB")
+        print()
         if ram.memoria:
             print("Conteúdo da RAM:")
             for k, v in ram.memoria.items():
@@ -3176,6 +3255,173 @@ def executar_comando(tokens, cpu, ram, disco, diretorio_atual):
             except ValueError:
                 print("Erro: Número de ciclos inválido, usando padrão (10).")
         simulador_ms.executar_simulacao(ciclos)
+
+    # ==================== COMANDOS "OFICIAIS" DO MS-DOS QUE FALTAVAM ====================
+    elif cmd == "atributos":
+        secao_attr = _ler_secao(disco.arquivo, "atributos")
+        if len(tokens) < 2:
+            itens = disco.listar_diretorio(diretorio_atual)
+            if not itens:
+                print("Nenhum arquivo ou diretório.")
+            for item in sorted(itens):
+                caminho_item = obter_caminho_absoluto(item, diretorio_atual)
+                flags = "".join(sorted(secao_attr.get(caminho_item, []))) or "A"
+                print(f"  {flags:<4} {item}")
+        else:
+            alvo = tokens[1]
+            caminho_alvo = obter_caminho_absoluto(alvo, diretorio_atual)
+            mudou = False
+            for op in tokens[2:]:
+                if len(op) == 2 and op[0] in "+-" and op[1].upper() in "RHSA":
+                    atual = set(secao_attr.get(caminho_alvo, []))
+                    letra = op[1].upper()
+                    if op[0] == "+":
+                        atual.add(letra)
+                    else:
+                        atual.discard(letra)
+                    secao_attr[caminho_alvo] = sorted(atual)
+                    mudou = True
+            if mudou:
+                _gravar_secao(disco.arquivo, "atributos", secao_attr)
+                flags_atuais = "".join(secao_attr.get(caminho_alvo, [])) or "(nenhum)"
+                print(f"Atributos de '{alvo}' atualizados: {flags_atuais}")
+            else:
+                flags = "".join(sorted(secao_attr.get(caminho_alvo, []))) or "A"
+                print(f"  {flags:<4} {alvo}")
+    elif cmd == "checardisco":
+        print("Verificando unidade C:...")
+        print()
+        info = disco.obter_info()
+        dados_disco = disco._carregar()
+
+        def _contar_pastas(d):
+            n = 0
+            for v in d.values():
+                if isinstance(v, dict):
+                    n += 1 + _contar_pastas(v)
+            return n
+
+        n_pastas = _contar_pastas(dados_disco)
+        usado_bytes = info["usado_kb"] * 1024
+        livre_bytes = info["livre_kb"] * 1024
+        total_bytes = info["max_kb"] * 1024
+        print(f"  {total_bytes:>12} bytes de espaço total no disco")
+        print(f"  {usado_bytes:>12} bytes em {info['total_arquivos']} arquivo(s)")
+        print(f"  {n_pastas:>12} pasta(s)")
+        print(f"  {livre_bytes:>12} bytes disponíveis no disco")
+        print()
+        print("Não foram encontrados erros no disco.")
+    elif cmd == "apagarvore":
+        if len(tokens) < 2:
+            print("Uso: APAGARVORE nomepasta  (equivalente ao DELTREE do MS-DOS)")
+        else:
+            caminho_pasta = obter_caminho_absoluto(tokens[1], diretorio_atual)
+            if not disco.e_pasta(caminho_pasta):
+                print(f"Diretório não encontrado: {tokens[1]}")
+            else:
+                confirmacao = input(
+                    f"Excluir a pasta '{tokens[1]}' e TODO o seu conteúdo (S/N)? "
+                ).strip().lower()
+                if confirmacao == "s":
+                    disco.apagar_arquivo(caminho_pasta)
+                    print(f"Pasta '{tokens[1]}' excluída.")
+                else:
+                    print("Operação cancelada.")
+    elif cmd == "historico":
+        if not historico_ordenado:
+            print("Nenhum comando no histórico.")
+        else:
+            for i, cmd_hist in enumerate(historico_ordenado[-25:], start=1):
+                print(f"  {i:>3}  {cmd_hist}")
+    elif cmd == "modo":
+        if len(tokens) < 2:
+            largura = _largura_terminal_atual()
+            print("Status do dispositivo CON:")
+            print(f"    Colunas : {largura}")
+            print("    Linhas  : 25")
+        else:
+            print(f"MODO {' '.join(tokens[1:]).upper()} configurado.")
+    elif cmd == "prompt":
+        if len(tokens) < 2:
+            _prompt_formato = "$P$G"
+            print("Prompt redefinido para o padrão ($P$G).")
+        else:
+            _prompt_formato = " ".join(tokens[1:])
+            print(f"Prompt alterado para: {_prompt_formato}")
+    elif cmd == "set":
+        if len(tokens) < 2:
+            if not variaveis_ambiente:
+                print("Nenhuma variável de ambiente definida.")
+            for chave, valor in sorted(variaveis_ambiente.items()):
+                print(f"{chave}={valor}")
+        else:
+            resto = " ".join(tokens[1:])
+            if "=" in resto:
+                chave, valor = resto.split("=", 1)
+                chave = chave.strip().upper()
+                valor = valor.strip()
+                if valor:
+                    variaveis_ambiente[chave] = valor
+                    print(f"{chave}={valor}")
+                else:
+                    variaveis_ambiente.pop(chave, None)
+                    print(f"{chave} removida.")
+            else:
+                chave = resto.strip().upper()
+                if chave in variaveis_ambiente:
+                    print(f"{chave}={variaveis_ambiente[chave]}")
+                else:
+                    print("Variável de ambiente não definida.")
+    elif cmd == "path":
+        if len(tokens) < 2:
+            print(f"PATH={variaveis_ambiente.get('PATH', '(nulo)')}")
+        else:
+            variaveis_ambiente["PATH"] = " ".join(tokens[1:])
+            print(f"PATH={variaveis_ambiente['PATH']}")
+    elif cmd == "subst":
+        if len(tokens) < 2:
+            if not substituicoes_unidade:
+                print("Nenhuma unidade substituída.")
+            for letra, caminho in substituicoes_unidade.items():
+                print(f"{letra}: => {caminho}")
+        elif len(tokens) == 2:
+            letra = tokens[1].upper().rstrip(":")
+            if letra in substituicoes_unidade:
+                del substituicoes_unidade[letra]
+                print(f"Unidade {letra}: removida.")
+            else:
+                print("Uso: SUBST letra: caminho   (ou SUBST letra: para remover)")
+        else:
+            letra = tokens[1].upper().rstrip(":")
+            caminho_alvo = obter_caminho_absoluto(tokens[2], diretorio_atual)
+            substituicoes_unidade[letra] = caminho_alvo
+            print(f"Unidade {letra}: => {caminho_alvo}")
+    elif cmd == "sys":
+        alvo = tokens[1].upper() if len(tokens) > 1 else "C:"
+        print(f"Transferindo arquivos de sistema para a unidade {alvo}...")
+        time.sleep(0.3)
+        print("Arquivos de sistema transferidos.")
+    elif cmd == "verificar":
+        if len(tokens) < 2:
+            print(f"VERIFY está {'ativado' if _verificacao_ativa else 'desativado'}.")
+        else:
+            opcao = tokens[1].lower()
+            if opcao in ("on", "ligado"):
+                _verificacao_ativa = True
+                print("VERIFY ativado.")
+            elif opcao in ("off", "desligado"):
+                _verificacao_ativa = False
+                print("VERIFY desativado.")
+            else:
+                print("Uso: VERIFICAR ON|OFF")
+    elif cmd == "restaurar":
+        if not pilha_apagados:
+            print("Nenhum arquivo apagado para restaurar.")
+        else:
+            nome_arquivo, conteudo = pilha_apagados.pop()
+            disco.escrever_arquivo(nome_arquivo, conteudo)
+            ram.carregar(nome_arquivo, conteudo)
+            print(f"Arquivo '{nome_arquivo}' restaurado com sucesso.")
     else:
         _ultimo_comando_invalido = True
         _beep_erro()
@@ -3186,11 +3432,21 @@ def executar_comando(tokens, cpu, ram, disco, diretorio_atual):
 # --- TERMINAL ---
 def _prompt_dos(diretorio_atual):
     """Formata o diretório atual no estilo autêntico do prompt do MS-DOS:
-    barra invertida, maiúsculas e raiz como 'C:\\>'."""
+    barra invertida, maiúsculas e raiz como 'C:\\>'.
+    Respeita o formato configurado pelo comando PROMPT (estilo $P$G do
+    COMMAND.COM real), com $P$G como padrão de fábrica."""
     if diretorio_atual in ("", "/"):
-        return "C:\\>"
-    caminho = diretorio_atual.strip("/").replace("/", "\\").upper()
-    return f"C:\\{caminho}>"
+        caminho = "C:\\"
+    else:
+        caminho = f"C:\\{diretorio_atual.strip('/').replace('/', chr(92)).upper()}"
+    resultado = _prompt_formato
+    resultado = resultado.replace("$P", caminho)
+    resultado = resultado.replace("$G", ">")
+    resultado = resultado.replace("$$", "$")
+    resultado = resultado.replace("$_", "\n")
+    resultado = resultado.replace("$D", datetime.now().strftime("%a %d/%m/%Y"))
+    resultado = resultado.replace("$T", datetime.now().strftime("%H:%M:%S"))
+    return resultado
 
 def iniciar_terminal(cpu, ram, disco):
     lista_categorias = ", ".join(CATEGORIAS_AJUDA.keys())
@@ -3209,6 +3465,10 @@ def iniciar_terminal(cpu, ram, disco):
         try:
             prompt = f"{_prompt_dos(diretorio_atual)} "
             comando = input(prompt).strip()
+            if comando:
+                historico_ordenado.append(comando)
+                if len(historico_ordenado) > 200:
+                    historico_ordenado.pop(0)
             # Cada comando abre em sua própria tela limpa (como no MS-DOS real),
             # com o próprio comando digitado ecoado no topo.
             _cls()
@@ -3292,7 +3552,7 @@ def _travar_janela():
 
 
 def inicializar():
-    global disco_obj, simulador_ms, gerenciador_usuarios, usuario_atual
+    global disco_obj, simulador_ms, gerenciador_usuarios, usuario_atual, _LARGURA_ATUAL
     _adquirir_lock_unico()
     _maximizar_janela()
     _travar_janela()
@@ -3336,6 +3596,8 @@ def inicializar():
     _bp("MS-PyDOS 1.0 Installation Program".center(_LARGURA_LOGO))
     time.sleep(0.2)
     _bp("Copyright (c) Machine Shop Inc. 1981-2026".center(_LARGURA_LOGO))
+    time.sleep(0.15)
+    _bp("Inclui elementos do Apple ProDOS 2.4.3 (CATALOG, PREFIX)".center(_LARGURA_LOGO))
     _bp()
     time.sleep(0.5)
     for _linha_assinatura in ASSINATURA_DANIEL_BARBOSA_ITALICO:
@@ -3391,6 +3653,7 @@ def inicializar():
     else:
         _bp("  Armazenamento real: não foi possível detectar neste ambiente.")
     time.sleep(0.4)
+    _LARGURA_ATUAL = _LARGURA_LOGO
     simulador_ms = SimuladorSO(memoria_total=1024, quantum=2)
     time.sleep(0.4)
 
