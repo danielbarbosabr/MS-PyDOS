@@ -7,10 +7,22 @@
 #  do PATH: usa sempre o python do venv (venv/bin/python).
 # =====================================================================
 
-# Cores estilo MS-DOS (fundo azul, texto claro)
+# Cores estilo MS-DOS (fundo azul, texto claro) - mimetiza o 'color 1F' do Windows
 AZUL="\033[44m"
-CINZA="\033[37m"
+CINZA="\033[97m"
 RESET="\033[0m"
+
+# Liga o "modo azul" em todo o terminal (igual ao color 1F do .bat do Windows)
+ativar_modo_azul() { printf '\033[44m\033[97m\033]11;#0000AA\007'; }
+desativar_cores() { printf '\033[0m\033]111\007'; }
+trap desativar_cores EXIT
+
+# Forca a janela do terminal para tela inteira (maximizada) - best-effort
+if command -v wmctrl >/dev/null 2>&1; then
+    wmctrl -r :ACTIVE: -b add,maximized_vert,maximized_horz 2>/dev/null || true
+elif command -v xdotool >/dev/null 2>&1; then
+    xdotool getactivewindow windowstate --maximize 2>/dev/null || true
+fi
 
 APP_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 VENV_DIR="$APP_DIR/venv"
@@ -60,12 +72,12 @@ install_system_python() {
 
 print_banner() {
     clear
+    ativar_modo_azul
     local PAD="                                                            "
     local BAR
     printf -v BAR '%58s'
     BAR=${BAR// /-}
     pad() { printf '%s%s' "$1" "${PAD:0:$((56 - ${#1}))}"; }
-    echo -e "${AZUL}${CINZA}"
     echo "  +${BAR}+"
     printf "  | %s |\n" "$(pad 'MS-PyDOS - PROGRAMA DE INSTALACAO')"
     echo "  +${BAR}+"
@@ -74,18 +86,19 @@ print_banner() {
     printf "  | %s |\n" "$(pad '[1] INSTALAR   Prepara o ambiente e abre o MS-PyDOS')"
     printf "  | %s |\n" "$(pad '[2] INICIAR    Abre o MS-PyDOS ja instalado')"
     printf "  | %s |\n" "$(pad '[3] SAIR       Encerra este instalador')"
+    printf "  | %s |\n" "$(pad '[4] EDEX-UI    Abre o MS-PyDOS na interface sci-fi')"
     echo "  +${BAR}+"
-    echo -e "${RESET}"
     echo ""
 }
 
 menu() {
     while true; do
         print_banner
-        read -r -p "  Escolha uma opcao: " OPCAO
+        read -r -p "   Escolha uma opcao: " OPCAO
         case "$OPCAO" in
             1) instalar ;;
             2) iniciar ;;
+            4) edex ;;
             3) exit 0 ;;
             *) echo "  Opcao invalida."; sleep 1 ;;
         esac
@@ -175,6 +188,17 @@ iniciar() {
     fi
 }
 
+edex() {
+    clear
+    if [ -x "$VENV_PY" ]; then
+        "$VENV_PY" "$APP" --edex
+    else
+        echo "  MS-PyDOS ainda nao foi instalado. Execute a opcao [1] INSTALAR primeiro."
+        echo ""
+        read -r -p "  Pressione Enter..."
+    fi
+}
+
 executar() {
     if [ ! -x "$VENV_PY" ]; then
         echo "  [ERRO] Python do venv nao encontrado. Execute a opcao [1] INSTALAR."
@@ -184,6 +208,7 @@ executar() {
         echo "  [ERRO] MS-PyDOS.py nao encontrado em: $APP"
         read -r -p "  Pressione Enter..."; return
     fi
+    desativar_cores
     "$VENV_PY" "$APP"
     if [ $? -ne 0 ]; then
         echo "  [AVISO] O MS-PyDOS encerrou com codigo de erro."

@@ -103,21 +103,108 @@ def dos_desligar_tela_azul():
 def dos_txt(texto, cor=""):
     return f"{cor}{texto}{COR_TEXTO}" if cor else texto
 
+def _cls():
+    """Limpa a tela do terminal real (equivalente ao comando CLS do MS-DOS),
+    para que cada tela/comando apareça isolado, como no DOS de verdade."""
+    os.system("cls" if os.name == "nt" else "clear")
+
+def _beep(frequencia=800, duracao_ms=100):
+    """Toca um beep, estilo POST de BIOS / MassGrave rodando.
+    No Windows usa o alto-falante do sistema (winsound.Beep); em outros SO,
+    ou se não for possível, usa o 'bell' do próprio terminal (\\a)."""
+    try:
+        if os.name == "nt":
+            import winsound
+            winsound.Beep(int(frequencia), int(duracao_ms))
+            return
+    except Exception:
+        pass
+    try:
+        sys.stdout.write("\a")
+        sys.stdout.flush()
+    except Exception:
+        pass
+
+def _beep_erro():
+    """Som de erro, estilo 'beep' de falha de POST da BIOS (grave e curto,
+    repetido duas vezes)."""
+    for _ in range(2):
+        _beep(220, 120)
+        time.sleep(0.06)
+
+def _beep_ok():
+    """Som de sucesso, tipo um 'sininho' (uma sequência curta de notas
+    agudas subindo), como o jingle de sucesso de instaladores/ativadores."""
+    for freq in (900, 1300, 1700):
+        _beep(freq, 60)
+        time.sleep(0.02)
+
+LARGURA_TERMINAL = 80  # usado apenas como valor de reserva (fallback)
+
+def _largura_terminal_atual():
+    """Descobre a largura REAL do terminal onde o MS-PyDOS está rodando
+    (o Windows Terminal, cmd, PowerShell etc. podem estar maximizados e
+    muito mais largos que 80 colunas). Sempre que possível a centralização
+    usa esse valor, em vez de um número fixo, para a caixa ficar centralizada
+    de verdade na tela do usuário, e não só nos 80 primeiros caracteres."""
+    try:
+        colunas = shutil.get_terminal_size(fallback=(LARGURA_TERMINAL, 24)).columns
+        return colunas if colunas > 0 else LARGURA_TERMINAL
+    except Exception:
+        return LARGURA_TERMINAL
+
+def _margem(largura, largura_terminal=None):
+    """Quantidade de espaços para centralizar um bloco de 'largura' colunas
+    dentro do terminal atual, como as telas de instalação do MS-DOS
+    (a caixa fica centralizada na tela)."""
+    if largura_terminal is None:
+        largura_terminal = _largura_terminal_atual()
+    return " " * max((largura_terminal - largura) // 2, 0)
+
+def _p(largura, texto=""):
+    """Imprime uma linha de conteúdo já com a margem esquerda para ficar
+    alinhada/centralizada junto com o título/rodapé daquela mesma tela."""
+    print(_margem(largura) + texto)
+
+def _in(largura, prompt=""):
+    """input() com a mesma margem esquerda usada nas telas centralizadas."""
+    return input(_margem(largura) + prompt)
+
+# Largura da "caixa" atualmente aberta na tela (definida por desenhar_titulo /
+# _titulo_config). Usada por _pr() para que TODO o conteúdo impresso dentro de
+# uma tela fique alinhado/centralizado junto com o título e o rodapé daquela
+# mesma tela, do mesmo jeito que as telas de instalação do MS-DOS de verdade.
+_LARGURA_ATUAL = LARGURA_TERMINAL
+
+def _pr(*args, sep=" ", end="\n", **kwargs):
+    """print() com a margem esquerda da caixa atualmente aberta na tela,
+    para manter o conteúdo centralizado junto com o título/rodapé."""
+    texto = sep.join(str(a) for a in args)
+    print(_margem(_LARGURA_ATUAL) + texto, end=end, **kwargs)
+
 # --- HELPERS DE FORMATAÇÃO DE TELA (estilo telas de instalação do MS-DOS 4.0, ex.: SELECT/Setup) ---
 def desenhar_titulo(texto, largura=68):
     """Imprime um cabeçalho estilo tela de instalação do MS-DOS, ex.:
                                 Welcome
     ────────────────────────────────────────────────────────────
+    Sempre limpa a tela antes, para que cada tela apareça sozinha
+    (sem sobrar texto de comandos/telas anteriores), como no DOS real.
+    A caixa inteira fica centralizada horizontalmente na tela (80 colunas),
+    igual às telas de instalação originais do MS-DOS.
     """
+    global _LARGURA_ATUAL
+    _LARGURA_ATUAL = largura
+    _cls()
+    m = _margem(largura)
     print()
-    print(COR_TEXTO_BRILHANTE + texto.center(largura) + COR_TEXTO)
-    print(COR_TEXTO_BRILHANTE + "─" * largura + COR_TEXTO)
+    print(m + COR_TEXTO_BRILHANTE + texto.center(largura) + COR_TEXTO)
+    print(m + COR_TEXTO_BRILHANTE + "─" * largura + COR_TEXTO)
 
 def desenhar_rodape(largura=68):
-    print(COR_TEXTO_BRILHANTE + "─" * largura + COR_TEXTO)
+    print(_margem(largura) + COR_TEXTO_BRILHANTE + "─" * largura + COR_TEXTO)
 
 def desenhar_divisoria(largura=68):
-    print(COR_TEXTO_BRILHANTE + "─" * largura + COR_TEXTO)
+    print(_margem(largura) + COR_TEXTO_BRILHANTE + "─" * largura + COR_TEXTO)
 
 def desenhar_barra_acoes(opcoes, largura=68):
     """Barra de teclas de ação em vídeo reverso, como no rodapé do DOS 4.0 SELECT
@@ -126,11 +213,37 @@ def desenhar_barra_acoes(opcoes, largura=68):
     for tecla, rotulo in opcoes:
         texto = f" {tecla} " if not rotulo else f" {tecla}={rotulo} "
         partes.append(f"{COR_REVERSO}{texto}{COR_REVERSO_OFF}")
-    print("  " + "   ".join(partes))
+    print(_margem(largura) + "  " + "   ".join(partes))
     print()
 
 def pausar_tela(mensagem="Pressione ENTER para continuar..."):
     input("\n" + mensagem)
+
+# --- ASSINATURA DO AUTOR (arte ASCII) ---
+# Versão "em pé" (bloco reto), usada na tela de Welcome/Setup.
+ASSINATURA_DANIEL_BARBOSA = [
+    " ___            _     _   ___           _                  ",
+    "|   \\ __ _ _ _ (_)___| | | _ ) __ _ _ _| |__  ___ ___ __ _ ",
+    "| |) / _` | ' \\| / -_) | | _ \\/ _` | '_| '_ \\/ _ (_-</ _` |",
+    "|___/\\__,_|_||_|_\\___|_| |___/\\__,_|_| |_.__/\\___/__/\\__,_|",
+]
+
+# Versão "deitada" (itálico/inclinada), usada na tela de boot.
+ASSINATURA_DANIEL_BARBOSA_ITALICO = [
+    "    ____              _      __   ____             __                    ",
+    "   / __ \\____ _____  (_)__  / /  / __ )____ ______/ /_  ____  _________ _",
+    "  / / / / __ `/ __ \\/ / _ \\/ /  / __  / __ `/ ___/ __ \\/ __ \\/ ___/ __ `/",
+    " / /_/ / /_/ / / / / /  __/ /  / /_/ / /_/ / /  / /_/ / /_/ (__  ) /_/ / ",
+    "/_____/\\__,_/_/ /_/_/\\___/_/  /_____/\\__,_/_/  /_.___/\\____/____/\\__,_/  ",
+]
+
+def desenhar_assinatura(largura=None, italico=False):
+    """Imprime a assinatura do autor centralizada na caixa da tela atual."""
+    linhas = ASSINATURA_DANIEL_BARBOSA_ITALICO if italico else ASSINATURA_DANIEL_BARBOSA
+    if largura is None:
+        largura = max(len(l) for l in linhas)
+    for linha in linhas:
+        _p(largura, COR_CIANO + linha.center(largura) + COR_TEXTO)
 
 # --- CLASSE CPU ---
 class CPU:
@@ -541,45 +654,53 @@ def _ler_senha_oculta(prompt="Senha: "):
 
 def tela_cadastro_usuario(gerenciador, obrigatorio=False):
     """Tela de cadastro de usuário no estilo das telas de instalação MS-DOS SELECT/Setup."""
+    L = 62
     while True:
-        desenhar_titulo("Welcome to MS-PyDOS Setup", 60)
-        print("  Vamos criar sua conta de usuário para o MS-PyDOS.")
-        print("  Escolha um nome de usuário e uma senha para proteger")
-        print("  o acesso ao sistema.")
-        print()
-        desenhar_divisoria(60)
-        desenhar_barra_acoes([("ENTER", "Confirmar"), ("CTRL+C", "Cancelar")], 60)
+        desenhar_titulo("Welcome to MS-PyDOS Setup", L)
+        _p(L, "  Vamos criar sua conta de usuário para o MS-PyDOS.")
+        _p(L, "  Escolha um nome de usuário e uma senha para proteger")
+        _p(L, "  o acesso ao sistema.")
+        _p(L)
+        desenhar_assinatura(L)
+        _p(L)
+        desenhar_divisoria(L)
+        desenhar_barra_acoes([("ENTER", "Confirmar"), ("CTRL+C", "Cancelar")], L)
         try:
-            nome = input("  Nome de usuário.......: ").strip()
-            senha = _ler_senha_oculta("  Senha.................: ")
-            confirmar = _ler_senha_oculta("  Confirme a senha......: ")
-            cpf = input("  CPF...................: ").strip()
-            cep = input("  CEP...................: ").strip()
+            nome = _in(L, "  Nome de usuário.......: ").strip()
+            senha = _ler_senha_oculta(_margem(L) + "  Senha.................: ")
+            confirmar = _ler_senha_oculta(_margem(L) + "  Confirme a senha......: ")
+            cpf = _in(L, "  CPF...................: ").strip()
+            cep = _in(L, "  CEP...................: ").strip()
         except KeyboardInterrupt:
-            print("\n[CANCELADO]\n")
+            _pr("\n[CANCELADO]\n")
             if obrigatorio:
-                print("É necessário criar uma conta para usar o MS-PyDOS.\n")
+                _pr("É necessário criar uma conta para usar o MS-PyDOS.\n")
                 continue
             return None
-        desenhar_rodape(60)
+        desenhar_rodape(L)
 
         if senha != confirmar:
+            _beep_erro()
             print("[ERRO] As senhas não coincidem. Tente novamente.\n")
             continue
 
         if not validar_cpf(cpf):
+            _beep_erro()
             print("[ERRO] CPF inválido. Digite os 11 dígitos (com ou sem pontuação).\n")
             continue
 
         if not validar_cep(cep):
+            _beep_erro()
             print("[ERRO] CEP inválido. Digite os 8 dígitos (com ou sem hífen).\n")
             continue
 
         ok, msg = gerenciador.cadastrar(nome, senha, cpf, cep)
         if ok:
+            _beep_ok()
             print(f"[OK] {msg}\n")
             return nome
         else:
+            _beep_erro()
             print(f"[ERRO] {msg}\n")
             if not obrigatorio:
                 resposta = input("Deseja tentar novamente? (s/n): ").strip().lower()
@@ -589,33 +710,37 @@ def tela_cadastro_usuario(gerenciador, obrigatorio=False):
 
 def tela_login(gerenciador):
     """Tela de login estilo MS-DOS Setup. Permite autenticar ou cadastrar um novo usuário."""
+    L = 60
     tentativas = 0
     while tentativas < 5:
-        desenhar_titulo("MS-PyDOS - Login", 60)
-        print("  Digite seu usuário e senha para continuar.")
-        print("  Digite CADASTRAR no campo usuário para criar uma conta.")
-        print()
-        desenhar_divisoria(60)
-        desenhar_barra_acoes([("ENTER", "Confirmar"), ("CTRL+C", "Sair")], 60)
+        desenhar_titulo("MS-PyDOS - Login", L)
+        _p(L, "  Digite seu usuário e senha para continuar.")
+        _p(L, "  Digite CADASTRAR no campo usuário para criar uma conta.")
+        _p(L)
+        desenhar_divisoria(L)
+        desenhar_barra_acoes([("ENTER", "Confirmar"), ("CTRL+C", "Sair")], L)
         try:
-            nome = input("  Usuário...............: ").strip()
+            nome = _in(L, "  Usuário...............: ").strip()
             if nome.lower() == "cadastrar":
-                desenhar_rodape(60)
+                desenhar_rodape(L)
                 return tela_cadastro_usuario(gerenciador)
-            senha = _ler_senha_oculta("  Senha.................: ")
+            senha = _ler_senha_oculta(_margem(L) + "  Senha.................: ")
         except KeyboardInterrupt:
             print("\n[CANCELADO] Encerrando o MS-PyDOS.")
             sys.exit()
-        desenhar_rodape(60)
+        desenhar_rodape(L)
 
         ok, resultado = gerenciador.autenticar(nome, senha)
         if ok:
+            _beep_ok()
             print(f"[OK] Bem-vindo(a), {resultado}!\n")
             return resultado
         else:
             tentativas += 1
+            _beep_erro()
             print(f"[ERRO] {resultado} (tentativa {tentativas}/5)\n")
 
+    _beep_erro()
     print("[ERRO] Número máximo de tentativas excedido. Encerrando o MS-PyDOS.")
     sys.exit()
 
@@ -795,11 +920,11 @@ class SimuladorSO:
 
     def exibir_memoria(self):
         desenhar_titulo("ESTADO DA MEMÓRIA PRINCIPAL", 70)
-        print(f"Memória Total      : {self.memoria_total} KB")
-        print(f"Memória Utilizada  : {self.memoria_utilizada} KB")
-        print(f"Memória Livre      : {self.memoria_total - self.memoria_utilizada} KB")
+        _pr(f"Memória Total      : {self.memoria_total} KB")
+        _pr(f"Memória Utilizada  : {self.memoria_utilizada} KB")
+        _pr(f"Memória Livre      : {self.memoria_total - self.memoria_utilizada} KB")
         taxa = (self.memoria_utilizada / self.memoria_total) * 100 if self.memoria_total else 0
-        print(f"Taxa de Utilização : {taxa:.2f}%")
+        _pr(f"Taxa de Utilização : {taxa:.2f}%")
         desenhar_divisoria(70)
         for i, particao in enumerate(self.particoes, 1):
             if particao.ocupada:
@@ -808,7 +933,7 @@ class SimuladorSO:
             else:
                 status = "LIVRE"
                 dono = "---"
-            print(f"Partição {i:2}: {particao.tamanho:4} KB | {status:7} | Uso: {particao.memoria_usada:4} KB | {dono}")
+            _pr(f"Partição {i:2}: {particao.tamanho:4} KB | {status:7} | Uso: {particao.memoria_usada:4} KB | {dono}")
         desenhar_rodape(70)
 
     # ---------------- PROCESSOS ----------------
@@ -933,15 +1058,15 @@ class SimuladorSO:
 
     def listar_processos(self):
         desenhar_titulo("TABELA DE PROCESSOS", 80)
-        print(f"{'PID':>6} | {'Nome':<18} | {'Prior.':>6} | {'Estado':<12} | {'CPU':>9} | {'Memória':>9}")
+        _pr(f"{'PID':>6} | {'Nome':<18} | {'Prior.':>6} | {'Estado':<12} | {'CPU':>9} | {'Memória':>9}")
         desenhar_divisoria(80)
         encontrou = False
         for pcb in self.processos.values():
             if pcb.estado != EstadoProcesso.TERMINADO:
                 encontrou = True
-                print(f"{pcb.pid:>6} | {pcb.nome:<18} | {pcb.prioridade:>6} | {pcb.estado.name:<12} | {pcb.tempo_cpu:>3}/{pcb.tempo_total:<3} | {pcb.memoria_alocada:>6} KB")
+                _pr(f"{pcb.pid:>6} | {pcb.nome:<18} | {pcb.prioridade:>6} | {pcb.estado.name:<12} | {pcb.tempo_cpu:>3}/{pcb.tempo_total:<3} | {pcb.memoria_alocada:>6} KB")
         if not encontrou:
-            print("Nenhum processo ativo.")
+            _pr("Nenhum processo ativo.")
         desenhar_rodape(80)
         print(f"Processos ativos: {self.num_processos} | Total criados: {self.total_processos_criados} | Total finalizados: {self.total_processos_finalizados}")
 
@@ -1050,11 +1175,11 @@ class SimuladorSO:
     def listar_arquivos(self):
         desenhar_titulo("ARQUIVOS DO SISTEMA", 70)
         if not self.arquivos:
-            print("Nenhum arquivo cadastrado.")
+            _pr("Nenhum arquivo cadastrado.")
         else:
             for arquivo in self.arquivos.values():
                 status = "ABERTO" if arquivo.aberto else "FECHADO"
-                print(f"Nome: {arquivo.nome} | Tamanho: {arquivo.tamanho} KB | Status: {status} | Dono PID: {arquivo.pid_dono} | Criado em: {arquivo.data_criacao}")
+                _pr(f"Nome: {arquivo.nome} | Tamanho: {arquivo.tamanho} KB | Status: {status} | Dono PID: {arquivo.pid_dono} | Criado em: {arquivo.data_criacao}")
         desenhar_rodape(70)
 
     # ---------------- RECURSOS E SEMÁFOROS ----------------
@@ -1081,7 +1206,7 @@ class SimuladorSO:
         desenhar_titulo("SEMÁFOROS DO SISTEMA", 40)
         for nome, valor in self.semaforos.items():
             estado = "LIVRE" if valor > 0 else "OCUPADO"
-            print(f"{nome} = {valor} ({estado})")
+            _pr(f"{nome} = {valor} ({estado})")
         desenhar_rodape(40)
 
     def solicitar_recurso(self, pid, tipo):
@@ -1127,10 +1252,10 @@ class SimuladorSO:
         desenhar_titulo("RECURSOS DO SISTEMA", 60)
         for tipo, recurso in self.recursos.items():
             status = "DISPONÍVEL" if recurso.disponivel else ("OCUPADO - PID " + str(recurso.pid_dono))
-            print(f"{tipo.name:<12}: {status}")
-        print("\nSEMÁFOROS")
+            _pr(f"{tipo.name:<12}: {status}")
+        _pr("\nSEMÁFOROS")
         for nome, valor in self.semaforos.items():
-            print(f"{nome} = {valor}")
+            _pr(f"{nome} = {valor}")
         desenhar_rodape(60)
 
     # ---------------- LOG / ESTATÍSTICAS / SIMULAÇÃO ----------------
@@ -1142,7 +1267,7 @@ class SimuladorSO:
     def mostrar_log(self, quantidade=30):
         desenhar_titulo("LOG DO SISTEMA", 60)
         for entrada in self.log[-quantidade:]:
-            print(entrada)
+            _pr(entrada)
         desenhar_rodape(60)
 
     def executar_ciclo(self):
@@ -1160,12 +1285,12 @@ class SimuladorSO:
 
     def estatisticas(self):
         desenhar_titulo("ESTATÍSTICAS DO SISTEMA", 60)
-        print(f"Tempo de simulação     : {self.clock}")
-        print(f"Processos criados      : {self.total_processos_criados}")
-        print(f"Processos finalizados  : {self.total_processos_finalizados}")
-        print(f"Processos ativos       : {self.num_processos}")
-        print(f"Memória utilizada      : {self.memoria_utilizada} / {self.memoria_total} KB")
-        print(f"Arquivos               : {len(self.arquivos)}")
+        _pr(f"Tempo de simulação     : {self.clock}")
+        _pr(f"Processos criados      : {self.total_processos_criados}")
+        _pr(f"Processos finalizados  : {self.total_processos_finalizados}")
+        _pr(f"Processos ativos       : {self.num_processos}")
+        _pr(f"Memória utilizada      : {self.memoria_utilizada} / {self.memoria_total} KB")
+        _pr(f"Arquivos               : {len(self.arquivos)}")
         desenhar_rodape(60)
 
     def carregar_processos_exemplo(self):
@@ -1268,6 +1393,7 @@ ABREVIACOES_COMANDOS = {
     "touch": "criararquivoso",
     "open": "abrirarquivo",
     "recursos": "recursos",
+    "limpararm": "limpararmazenamento",
     "close": "fechararquivo",
     "write": "escreverarquivo",
     "cat": "lerarquivo",
@@ -1331,7 +1457,6 @@ CATEGORIAS_AJUDA = {
         ("ams", "Executar varredura do Serviço Anti-Malware"),
         ("configuracoes", "Abrir o Painel de Configurações (Wi-Fi, Bluetooth, Rede, Sistema)"),
         ("limpar", "Limpar arquivos temporários e cache do sistema (LIMPAR)"),
-        ("limpararmazenamento", "Limpar tudo: temp, cache e armazenamento - Downloads/Lixeira (LIMPARARMAZENAMENTO)"),
         ("sair", "Sair do MS-PyDOS"),
     ],
     "memoria": [
@@ -1443,13 +1568,13 @@ def escanear_ams(ram, disco=None, silencioso=False, excluir=False):
         if "formatar" in ram.memoria[chave].lower():
             suspeita_encontrada = True
             if not silencioso:
-                print(f"[ALERTA] Comando suspeito 'formatar' na RAM chave: {chave}")
+                _pr(f"[ALERTA] Comando suspeito 'formatar' na RAM chave: {chave}")
             if excluir:
                 ram.memoria.pop(chave)
                 if not silencioso:
-                    print(f"[REMOVIDO] Entrada RAM {chave} excluída")
+                    _pr(f"[REMOVIDO] Entrada RAM {chave} excluída")
                 if silencioso:
-                    print(f"[REMOVIDO] Entrada RAM {chave} excluída")
+                    _pr(f"[REMOVIDO] Entrada RAM {chave} excluída")
 
     if disco is not None:
         def escanear_pasta(caminho):
@@ -1485,8 +1610,8 @@ def iniciar_editor(disco, ram, diretorio_atual="/"):
     arquivo_atual = None
     buffer = []
     desenhar_titulo("Mini Editor", 60)
-    print("  Digite texto ou comandos começando com ':'")
-    print("  Comandos: :abrir, :novo, :del, :mostrar, :salvar, :sair")
+    _pr("  Digite texto ou comandos começando com ':'")
+    _pr("  Comandos: :abrir, :novo, :del, :mostrar, :salvar, :sair")
     desenhar_rodape(60)
     while True:
         linha = input().rstrip()
@@ -1587,6 +1712,7 @@ APLICATIVOS = {
 # ============================================================
 recursos_abertos = []            # {nome, tipo, proc, monitoravel, pid, inicio}
 _notificacoes_pendentes = []      # mensagens de retorno exibidas antes do prompt
+_ultimo_comando_invalido = False  # usado para saber se toca beep de erro ou de sucesso
 _lock_mspydos = None
 
 
@@ -1645,18 +1771,19 @@ def abrir_site_integrado(url, nome):
         registrar_recurso(nome, "site", None, monitoravel=False)
         print("O MS-PyDOS continua ativo. Use RECURSOS para ver os recursos abertos.")
     except Exception as e:
+        _beep_erro()
         print(f"[ERRO] Não foi possível abrir '{nome}': {e}")
 
 
 def listar_recursos_abertos():
     desenhar_titulo("RECURSOS ABERTOS (integrados ao MS-PyDOS)", 64)
     if not recursos_abertos:
-        print("  Nenhum recurso externo aberto no momento.")
+        _pr("  Nenhum recurso externo aberto no momento.")
     else:
         for r in recursos_abertos:
             estado = "monitorado" if r["monitoravel"] else "externo (não monitorável)"
             pid = r["pid"] if r["pid"] else "-"
-            print(f"  - {r['nome']:<16} [{r['tipo']}]  PID {pid:<6} {estado}")
+            _pr(f"  - {r['nome']:<16} [{r['tipo']}]  PID {pid:<6} {estado}")
     desenhar_rodape(64)
     print("MS-PyDOS continua em execução. Ao fechar um recurso, o foco retorna aqui.\n")
 
@@ -1674,6 +1801,8 @@ def _liberar_lock():
 def _adquirir_lock_unico():
     """Garante uma única instância do MS-PyDOS (evita janelas/processos duplicados)."""
     global _lock_mspydos
+    if os.environ.get("MSPYDOS_ALLOW_MULTI") == "1":
+        return
     pasta = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data")
     try:
         os.makedirs(pasta, exist_ok=True)
@@ -1788,9 +1917,9 @@ def obter_ip_local():
 
 def menu_rede_internet():
     _titulo_config("REDE E INTERNET")
-    print(f"Nome do host  : {socket.gethostname()}")
-    print(f"Endereço IPv4 : {obter_ip_local()}")
-    print(f"Sistema       : {platform.system()} {platform.release()}")
+    _pr(f"Nome do host  : {socket.gethostname()}")
+    _pr(f"Endereço IPv4 : {obter_ip_local()}")
+    _pr(f"Sistema       : {platform.system()} {platform.release()}")
     sistema = platform.system()
     try:
         if sistema == "Windows":
@@ -1800,21 +1929,21 @@ def menu_rede_internet():
         else:
             saida = subprocess.run(["hostname", "-I"], capture_output=True, text=True, timeout=6).stdout
         if saida.strip():
-            print("\n--- Detalhes da interface (resumo) ---")
-            print(saida.strip()[:1200])
+            _pr("\n--- Detalhes da interface (resumo) ---")
+            _pr(saida.strip()[:1200])
     except Exception:
-        print("\n[AVISO] Detalhes de interface indisponíveis neste ambiente.")
+        _pr("\n[AVISO] Detalhes de interface indisponíveis neste ambiente.")
 
-    print("\n--- Wi-Fi salvos neste computador (redes e senhas) ---")
+    _pr("\n--- Wi-Fi salvos neste computador (redes e senhas) ---")
     salvos = listar_wifi_salvos()
     if salvos:
         for i, p in enumerate(salvos, 1):
             senha = p["senha"] if p["senha"] else "(salva no sistema / não legível aqui)"
-            print(f" [{i}] {p['ssid']:<28} | Senha: {senha}")
+            _pr(f" [{i}] {p['ssid']:<28} | Senha: {senha}")
     else:
-        print(" Nenhum Wi-Fi salvo detectado (ou leitura não suportada neste ambiente).")
+        _pr(" Nenhum Wi-Fi salvo detectado (ou leitura não suportada neste ambiente).")
     _linha_config()
-    print(" [C] Conectar a um Wi-Fi salvo   [A] Abrir configurações de rede   [0] Voltar")
+    _pr(" [C] Conectar a um Wi-Fi salvo   [A] Abrir configurações de rede   [0] Voltar")
     _linha_config()
     escolha = input("\nSelecione uma opção: ").strip().lower()
     if escolha == "0":
@@ -1823,15 +1952,15 @@ def menu_rede_internet():
         abrir_aplicativo("wifi")
     elif escolha == "c":
         if not salvos:
-            print("Não há Wi-Fi salvo para conectar.")
+            _pr("Não há Wi-Fi salvo para conectar.")
         else:
             num = input("Número da rede salva para conectar: ").strip()
             if num.isdigit() and 1 <= int(num) <= len(salvos):
                 conectar_wifi_salvo(salvos[int(num) - 1]["ssid"])
             else:
-                print("Opção inválida.")
+                _pr("Opção inválida.")
     elif escolha:
-        print("Opção inválida.")
+        _pr("Opção inválida.")
     _pausar_config()
 
 def listar_redes_wifi():
@@ -1889,9 +2018,11 @@ def conectar_wifi(ssid):
             print("Abrindo as configurações de Wi-Fi do sistema...")
             abrir_aplicativo("wifi")
     except FileNotFoundError:
+        _beep_erro()
         print("[ERRO] Ferramenta de rede não encontrada. Abrindo configurações do sistema...")
         abrir_aplicativo("wifi")
     except Exception as e:
+        _beep_erro()
         print(f"[ERRO] Falha ao conectar: {e}")
 
 
@@ -1998,33 +2129,65 @@ def conectar_wifi_salvo(ssid):
         else:
             conectar_wifi(ssid)
     except FileNotFoundError:
+        _beep_erro()
         print("[ERRO] Ferramenta de rede não encontrada. Abrindo configurações do sistema...")
         abrir_aplicativo("wifi")
     except Exception as e:
+        _beep_erro()
         print(f"[ERRO] Falha ao conectar: {e}")
+
+
+def info_projeto_wpa2():
+    """Exibe informacoes EDUCACIONAIS sobre o projeto publico de seguranca Wi-Fi."""
+    _titulo_config("INFO - PROJETO WPA2 (brutalforce-wpa2-tutorial)")
+    _pr("Repositorio: https://github.com/ViniciusRomano/brutalforce-wpa2-tutorial")
+    _pr()
+    _pr("Projeto EDUCACIONAL sobre seguranca Wi-Fi (WPA2). Aborda como redes")
+    _pr("sem fio protegidas funcionam e demonstra, em ambiente de laboratorio")
+    _pr("ou autorizado, conceitos de auditoria de senhas (captura de handshake")
+    _pr("e ataque de dicionario).")
+    _pr()
+    _pr("Temas geralmente abordados em tutoriais desse tipo:")
+    _pr(" - Funcionamento do WPA2 e do handshake de autenticacao")
+    _pr(" - Captura de pacotes com ferramentas de auditoria (ex.: aircrack-ng)")
+    _pr(" - Uso de wordlists/dicionarios para testar senhas")
+    _pr(" - Importancia de senhas fortes e do WPA3")
+    _pr()
+    _pr("AVISO: use apenas em redes das quais voce e dono ou tem autorizacao")
+    _pr("explicita para testar. Testar redes de terceiros e ilegal.")
+    _linha_config()
+    abrir = input("Abrir o repositorio no navegador? (s/n): ").strip().lower()
+    if abrir in ("s", "sim", "y", "yes"):
+        abrir_site_integrado(
+            "https://github.com/ViniciusRomano/brutalforce-wpa2-tutorial",
+            "brutalforce-wpa2-tutorial")
+    _pausar_config()
 
 
 def menu_wifi():
     _titulo_config("WI-FI")
-    print("Escaneando redes disponíveis...\n")
+    _pr("Escaneando redes disponíveis...\n")
     redes = listar_redes_wifi()
     if redes:
         for i, r in enumerate(redes, 1):
-            print(f" [{i}] {r}")
+            _pr(f" [{i}] {r}")
     else:
-        print(" Nenhuma rede encontrada (ou escaneamento não suportado aqui).")
-    print("\n [A] Abrir configurações de Wi-Fi do sistema")
-    print(" [0] Voltar")
+        _pr(" Nenhuma rede encontrada (ou escaneamento não suportado aqui).")
+    _pr("\n [A] Abrir configurações de Wi-Fi do sistema")
+    _pr(" [I] Sobre o projeto WPA2 (brutalforce-wpa2-tutorial)")
+    _pr(" [0] Voltar")
     _linha_config()
     escolha = input("\nSelecione uma rede ou opção: ").strip().lower()
     if escolha == "0":
         return
     elif escolha == "a":
         abrir_aplicativo("wifi")
+    elif escolha == "i":
+        info_projeto_wpa2()
     elif escolha.isdigit() and 1 <= int(escolha) <= len(redes):
         conectar_wifi(redes[int(escolha) - 1])
     elif escolha:
-        print("Opção inválida.")
+        _pr("Opção inválida.")
     _pausar_config()
 
 def _enviar_arquivo_bluetooth(caminho_real):
@@ -2051,27 +2214,27 @@ def _enviar_arquivo_bluetooth(caminho_real):
 
 def menu_bluetooth(disco, diretorio_atual):
     _titulo_config("BLUETOOTH")
-    print(" [1] Ativar / abrir configurações de Bluetooth do sistema")
-    print(" [2] Parear novo dispositivo (abre configurações reais do sistema)")
-    print(" [3] Compartilhar arquivo via Bluetooth (envio real do sistema)")
-    print(" [0] Voltar")
+    _pr(" [1] Ativar / abrir configurações de Bluetooth do sistema")
+    _pr(" [2] Parear novo dispositivo (abre configurações reais do sistema)")
+    _pr(" [3] Compartilhar arquivo via Bluetooth (envio real do sistema)")
+    _pr(" [0] Voltar")
     _linha_config()
     escolha = input("\nSelecione uma opção: ").strip()
     if escolha == "1":
         abrir_aplicativo("bluetooth")
     elif escolha == "2":
-        print("Abrindo as configurações REAIS de Bluetooth do sistema para parear...")
-        print("Conclua o pareamento na janela do sistema. O MS-PyDOS continua ativo.")
+        _pr("Abrindo as configurações REAIS de Bluetooth do sistema para parear...")
+        _pr("Conclua o pareamento na janela do sistema. O MS-PyDOS continua ativo.")
         abrir_aplicativo("bluetooth")
     elif escolha == "3":
         nome_arquivo = input("Nome do arquivo do disco MS-PyDOS para compartilhar: ").strip()
         if not nome_arquivo:
-            print("Operação cancelada.")
+            _pr("Operação cancelada.")
         else:
             caminho = obter_caminho_absoluto(nome_arquivo, diretorio_atual)
             conteudo = disco.ler_arquivo(caminho)
             if conteudo in ("[Arquivo não encontrado]", "[É uma pasta]"):
-                print(f"Não foi possível compartilhar: {conteudo}")
+                _pr(f"Não foi possível compartilhar: {conteudo}")
             else:
                 import tempfile
                 tmp = os.path.join(tempfile.gettempdir(),
@@ -2080,19 +2243,20 @@ def menu_bluetooth(disco, diretorio_atual):
                     with open(tmp, "w", encoding="utf-8") as f:
                         f.write(conteudo)
                 except OSError as e:
-                    print(f"[ERRO] Não foi possível exportar o arquivo: {e}")
+                    _beep_erro()
+                    _pr(f"[ERRO] Não foi possível exportar o arquivo: {e}")
                 else:
                     if _enviar_arquivo_bluetooth(tmp):
-                        print(f"Abrindo o envio Bluetooth REAL de '{nome_arquivo}'...")
-                        print("Conclua a transferência na janela do sistema. "
+                        _pr(f"Abrindo o envio Bluetooth REAL de '{nome_arquivo}'...")
+                        _pr("Conclua a transferência na janela do sistema. "
                               "O MS-PyDOS continua ativo.")
                     else:
-                        print("[AVISO] Nenhuma ferramenta de envio Bluetooth encontrada neste sistema.")
-                        print("Abra manualmente em: Configurações > Bluetooth.")
+                        _pr("[AVISO] Nenhuma ferramenta de envio Bluetooth encontrada neste sistema.")
+                        _pr("Abra manualmente em: Configurações > Bluetooth.")
     elif escolha == "0":
         return
     else:
-        print("Opção inválida.")
+        _pr("Opção inválida.")
     _pausar_config()
 
 def pesquisar_google(termo):
@@ -2123,8 +2287,24 @@ def executar_massgrave():
     try:
         comando = 'irm https://get.activated.win | iex'
         print("Iniciando PowerShell com o script MAS...")
-        subprocess.run(["powershell", "-NoProfile", "-Command", comando], check=False)
+        _beep(900, 100)
+        parar_beep = threading.Event()
+
+        def _beep_progresso():
+            # beep curto periódico enquanto o script roda, como o "tic" de
+            # atividade que aparece em ferramentas desse tipo (ex.: MassGrave)
+            while not parar_beep.wait(1.5):
+                _beep(700, 60)
+
+        thread_beep = threading.Thread(target=_beep_progresso, daemon=True)
+        thread_beep.start()
+        try:
+            subprocess.run(["powershell", "-NoProfile", "-Command", comando], check=False)
+        finally:
+            parar_beep.set()
+        _beep(1400, 150)
     except Exception as e:
+        _beep_erro()
         print(f"[ERRO] Não foi possível iniciar o PowerShell: {e}")
 
 def buscar_piratebay_mcp(termo):
@@ -2142,10 +2322,13 @@ def buscar_piratebay_mcp(termo):
             tamanho = r.get("size", "?")
             print(f"{i:2}. {nome} | Seeds: {seeds} | Peers: {peers} | Tamanho: {tamanho}")
     except Exception as e:
+        _beep_erro()
         print(f"[ERRO] torrent-search-mcp indisponível: {e}")
         print("Dica: pip install torrent-search-mcp && playwright install --with-deps chromium")
         print("Abrindo fallback no navegador...")
-        abrir_site_integrado(f"https://thepiratebay.org/search?q={quote_plus(termo)}", "The Pirate Bay")
+        abrir_site_integrado(
+            f"https://thepiratebay.org/search.php?q={quote_plus(termo)}&all=on"
+            f"&search=Pirate+Search&page=0&orderby=", "The Pirate Bay")
 
 def abrir_site(nome_site):
     sites = {
@@ -2182,11 +2365,11 @@ def abrir_site(nome_site):
 
 def limpar_sistema():
     _titulo_config("LIMPAR SISTEMA (TEMP / CACHE / ARMAZENAMENTO)")
-    print("Remove arquivos temporários, de cache e de armazenamento do sistema")
-    print("(Downloads, Lixeira, etc.). Arquivos em uso são ignorados.")
+    _pr("Remove arquivos temporários, de cache e de armazenamento do sistema")
+    _pr("(Downloads, Lixeira, etc.). Arquivos em uso são ignorados.")
     confirmar = input("Deseja continuar? (s/n): ").strip().lower()
     if confirmar not in ("s", "sim", "y", "yes"):
-        print("Operação cancelada.")
+        _pr("Operação cancelada.")
         _pausar_config()
         return
     sistema = platform.system()
@@ -2224,7 +2407,7 @@ def limpar_sistema():
     for pasta in locais:
         if not os.path.isdir(pasta):
             continue
-        print(f"\nLimpando: {pasta}")
+        _pr(f"\nLimpando: {pasta}")
         for raiz, subpastas, arquivos in os.walk(pasta, topdown=False):
             for nome in arquivos:
                 caminho = os.path.join(raiz, nome)
@@ -2242,7 +2425,7 @@ def limpar_sistema():
                     os.rmdir(os.path.join(raiz, nome))
                 except OSError:
                     pass
-    print(f"\nConcluído. {removidos} arquivo(s) removido(s), "
+    _pr(f"\nConcluído. {removidos} arquivo(s) removido(s), "
           f"{liberado // 1024} KB liberados (aprox.).")
     _pausar_config()
 
@@ -2252,15 +2435,15 @@ def menu_sistema_config(cpu, ram, disco):
     info_cpu = cpu.obter_info()
     info_ram = ram.obter_info()
     info_disco = disco.obter_info()
-    print(f"Sistema operacional real : {platform.system()} {platform.release()}")
-    print(f"Arquitetura              : {platform.machine()}")
-    print(f"MS-PyDOS - Ciclos CPU    : {info_cpu['ciclos']}")
-    print(f"MS-PyDOS - RAM           : {info_ram['usado_kb']} / {info_ram['total_kb']} KB usados")
-    print(f"MS-PyDOS - Disco         : {info_disco['usado_kb']} / {info_disco['max_kb']} KB usados "
+    _pr(f"Sistema operacional real : {platform.system()} {platform.release()}")
+    _pr(f"Arquitetura              : {platform.machine()}")
+    _pr(f"MS-PyDOS - Ciclos CPU    : {info_cpu['ciclos']}")
+    _pr(f"MS-PyDOS - RAM           : {info_ram['usado_kb']} / {info_ram['total_kb']} KB usados")
+    _pr(f"MS-PyDOS - Disco         : {info_disco['usado_kb']} / {info_disco['max_kb']} KB usados "
           f"({info_disco['total_arquivos']} arquivos)")
     _linha_config()
-    print(" [L] Limpar arquivos temporários e cache do sistema")
-    print(" [0] Voltar")
+    _pr(" [L] Limpar arquivos temporários e cache do sistema")
+    _pr(" [0] Voltar")
     _linha_config()
     escolha = input("\nSelecione uma opção: ").strip().lower()
     if escolha == "l":
@@ -2268,17 +2451,18 @@ def menu_sistema_config(cpu, ram, disco):
     elif escolha == "0":
         return
     else:
-        print("Opção inválida.")
+        _pr("Opção inválida.")
     _pausar_config()
 
 def menu_configuracoes(cpu, ram, disco, diretorio_atual):
     while True:
         _titulo_config("PAINEL DE CONFIGURAÇÕES - MS-PyDOS")
-        print(" [1] Rede e Internet")
-        print(" [2] Wi-Fi")
-        print(" [3] Bluetooth")
-        print(" [4] Sistema")
-        print(" [0] Voltar ao terminal")
+        _pr(" [1] Rede e Internet")
+        _pr(" [2] Wi-Fi")
+        _pr(" [3] Bluetooth")
+        _pr(" [4] Sistema")
+        _pr(" [5] Sobre o projeto WPA2 (brutalforce-wpa2-tutorial)")
+        _pr(" [0] Voltar ao terminal")
         _linha_config()
         escolha = input("\nSelecione uma opção: ").strip()
         if escolha == "1":
@@ -2289,11 +2473,13 @@ def menu_configuracoes(cpu, ram, disco, diretorio_atual):
             menu_bluetooth(disco, diretorio_atual)
         elif escolha == "4":
             menu_sistema_config(cpu, ram, disco)
+        elif escolha == "5":
+            info_projeto_wpa2()
         elif escolha == "0":
-            print("Voltando ao terminal...")
+            _pr("Voltando ao terminal...")
             break
         else:
-            print("Opção inválida.\n")
+            _pr("Opção inválida.\n")
 
 def obter_aplicativos_instalados_sistema(limite=300):
     """Detecta os aplicativos REALMENTE instalados no sistema operacional atual
@@ -2370,12 +2556,12 @@ def listar_aplicativos():
     desenhar_titulo("Aplicativos instalados no sistema", 68)
     apps_reais = obter_aplicativos_instalados_sistema()
     if apps_reais:
-        print(f"  {len(apps_reais)} aplicativo(s) detectado(s) neste computador:\n")
+        _pr(f"  {len(apps_reais)} aplicativo(s) detectado(s) neste computador:\n")
         for nome in apps_reais:
-            print(f"  - {nome}")
+            _pr(f"  - {nome}")
     else:
-        print("  Não foi possível detectar os aplicativos instalados neste ambiente")
-        print("  (sistema não suportado ou sem permissão de leitura).")
+        _pr("  Não foi possível detectar os aplicativos instalados neste ambiente")
+        _pr("  (sistema não suportado ou sem permissão de leitura).")
     desenhar_rodape(68)
     print("Use ABRIR <nome> para abrir qualquer aplicativo do sistema.\n")
 
@@ -2393,8 +2579,10 @@ def abrir_aplicativo(nome):
             registrar_recurso(nome, "aplicativo", proc, monitoravel=True)
             print("O MS-PyDOS continua ativo. Use RECURSOS para ver o que está aberto.")
         except FileNotFoundError:
+            _beep_erro()
             print(f"[ERRO] '{nome}' não está instalado ou não foi encontrado no PATH.")
         except Exception as e:
+            _beep_erro()
             print(f"[ERRO] Não foi possível abrir '{nome}': {e}")
         return
     # 2) qualquer aplicativo do sistema, pelo nome
@@ -2410,13 +2598,16 @@ def abrir_aplicativo(nome):
         registrar_recurso(nome, "aplicativo", proc, monitoravel=True)
         print("O MS-PyDOS continua ativo. Use RECURSOS para ver o que está aberto.")
     except FileNotFoundError:
+        _beep_erro()
         print(f"[ERRO] Não foi possível encontrar '{nome}' no sistema.")
     except Exception as e:
+        _beep_erro()
         print(f"[ERRO] Não foi possível abrir '{nome}': {e}")
 
 # --- EXECUTAR COMANDOS ---
 def executar_comando(tokens, cpu, ram, disco, diretorio_atual):
-    global usuario_atual
+    global usuario_atual, _ultimo_comando_invalido
+    _ultimo_comando_invalido = False
     if not tokens:
         return diretorio_atual
     cmd = resolver_abreviacao(tokens[0].lower())
@@ -2435,16 +2626,16 @@ def executar_comando(tokens, cpu, ram, disco, diretorio_atual):
             categorias = {filtro: CATEGORIAS_AJUDA[filtro]} if filtro else CATEGORIAS_AJUDA
             desenhar_titulo("AJUDA DO MS-PyDOS", 76)
             if not filtro:
-                print("Dica: digite AJUDA <categoria> para ver só uma categoria. Categorias:")
-                print("  " + ", ".join(CATEGORIAS_AJUDA.keys()))
+                _pr("Dica: digite AJUDA <categoria> para ver só uma categoria. Categorias:")
+                _pr("  " + ", ".join(CATEGORIAS_AJUDA.keys()))
             for nome_categoria, comandos in categorias.items():
                 desenhar_divisoria(76)
-                print(f" >> {nome_categoria.upper()}")
+                _pr(f" >> {nome_categoria.upper()}")
                 desenhar_divisoria(76)
                 for comando_completo, descricao in comandos:
                     abrevs = ABREV_POR_COMANDO.get(comando_completo, [])
                     sufixo_abrev = f"  (abrev.: {', '.join(a.upper() for a in abrevs)})" if abrevs else ""
-                    print(f"  {comando_completo.upper():<16}: {descricao}{sufixo_abrev}")
+                    _pr(f"  {comando_completo.upper():<16}: {descricao}{sufixo_abrev}")
             desenhar_rodape(76)
     elif cmd == "cadastrar":
         novo = tela_cadastro_usuario(gerenciador_usuarios)
@@ -2454,11 +2645,11 @@ def executar_comando(tokens, cpu, ram, disco, diretorio_atual):
         usuarios = gerenciador_usuarios.listar()
         desenhar_titulo("USUARIOS CADASTRADOS", 50)
         if not usuarios:
-            print("Nenhum usuário cadastrado.")
+            _pr("Nenhum usuário cadastrado.")
         else:
             for nome_u, info_u in usuarios.items():
                 marcador = " (sessão atual)" if nome_u == usuario_atual else ""
-                print(f"  {nome_u}{marcador}  -  criado em {info_u.get('criado_em', '?')}")
+                _pr(f"  {nome_u}{marcador}  -  criado em {info_u.get('criado_em', '?')}")
         desenhar_rodape(50)
     elif cmd == "login":
         novo_usuario = tela_login(gerenciador_usuarios)
@@ -2469,9 +2660,11 @@ def executar_comando(tokens, cpu, ram, disco, diretorio_atual):
         senha_nova = _ler_senha_oculta("Nova senha: ")
         confirmar_nova = _ler_senha_oculta("Confirme a nova senha: ")
         if senha_nova != confirmar_nova:
+            _beep_erro()
             print("[ERRO] As senhas não coincidem.")
         else:
             ok, msg = gerenciador_usuarios.trocar_senha(usuario_atual, senha_atual, senha_nova)
+            _beep_ok() if ok else _beep_erro()
             print(("[OK] " if ok else "[ERRO] ") + msg)
     elif cmd == "usuarioatual":
         print(f"Usuário com sessão aberta: {usuario_atual}")
@@ -2508,28 +2701,30 @@ def executar_comando(tokens, cpu, ram, disco, diretorio_atual):
     elif cmd == "editar":
         iniciar_editor(disco, ram, diretorio_atual)
     elif cmd == "cls":
-        os.system("cls" if os.name == "nt" else "clear")
+        _cls()
     elif cmd == "limpar":
         limpar_sistema()
     elif cmd == "limpararmazenamento":
         limpar_sistema()
     elif cmd == "ver":
-        print("MS-PyDOS v1.0 - Máquina de Shopping")
+        print()
+        print("MS-PyDOS Versão 1.0")
+        print()
     elif cmd == "data":
         print("Data atual: " + datetime.now().strftime("%d/%m/%Y"))
     elif cmd == "hora":
         print("Hora atual: " + datetime.now().strftime("%H:%M:%S"))
     elif cmd == "vol":
         desenhar_titulo("VOLUME DO DISCO", 50)
-        print(f"Rótulo : {disco.rotulo}")
+        _pr(f"Rótulo : {disco.rotulo}")
         info = disco.obter_info()
-        print(f"Usado  : {info['usado_kb']} KB")
-        print(f"Livre  : {info['livre_kb']} KB")
-        print(f"Arquivos: {info['total_arquivos']}")
+        _pr(f"Usado  : {info['usado_kb']} KB")
+        _pr(f"Livre  : {info['livre_kb']} KB")
+        _pr(f"Arquivos: {info['total_arquivos']}")
         info_disco_real = obter_info_disco_sistema()
         if info_disco_real:
             desenhar_divisoria(50)
-            print(f"Armazenamento real do PC: {info_disco_real['total_gb']:.1f} GB total | "
+            _pr(f"Armazenamento real do PC: {info_disco_real['total_gb']:.1f} GB total | "
                   f"{info_disco_real['livre_gb']:.1f} GB livres")
         desenhar_rodape(50)
     elif cmd == "rotulo":
@@ -2762,24 +2957,24 @@ def executar_comando(tokens, cpu, ram, disco, diretorio_atual):
         info_ram = ram.obter_info()
         info_disco = disco.obter_info()
         desenhar_titulo("INFORMAÇÕES DO SISTEMA MS-PyDOS", 66)
-        print(f"CPU   : Ciclos executados: {info_cpu['ciclos']}")
-        print(f"RAM   : {info_ram['total_kb']} KB total | Usado: {info_ram['usado_kb']} KB | Livre: {info_ram['livre_kb']} KB")
-        print(f"DISCO : {info_disco['max_kb']} KB total | Usado: {info_disco['usado_kb']} KB | Livre: {info_disco['livre_kb']} KB | Arquivos: {info_disco['total_arquivos']}")
+        _pr(f"CPU   : Ciclos executados: {info_cpu['ciclos']}")
+        _pr(f"RAM   : {info_ram['total_kb']} KB total | Usado: {info_ram['usado_kb']} KB | Livre: {info_ram['livre_kb']} KB")
+        _pr(f"DISCO : {info_disco['max_kb']} KB total | Usado: {info_disco['usado_kb']} KB | Livre: {info_disco['livre_kb']} KB | Arquivos: {info_disco['total_arquivos']}")
         desenhar_divisoria(66)
-        print("Dados reais da máquina:")
+        _pr("Dados reais da máquina:")
         info_ram_real = obter_info_ram_sistema()
         if info_ram_real:
             if info_ram_real.get("livre_mb") is not None:
-                print(f"  RAM real  : {info_ram_real['total_mb']} MB total | {info_ram_real['livre_mb']} MB livres")
+                _pr(f"  RAM real  : {info_ram_real['total_mb']} MB total | {info_ram_real['livre_mb']} MB livres")
             else:
-                print(f"  RAM real  : {info_ram_real['total_mb']} MB total")
+                _pr(f"  RAM real  : {info_ram_real['total_mb']} MB total")
         else:
-            print("  RAM real  : indisponível neste ambiente")
+            _pr("  RAM real  : indisponível neste ambiente")
         info_disco_real = obter_info_disco_sistema()
         if info_disco_real:
-            print(f"  Disco real: {info_disco_real['total_gb']:.1f} GB total | {info_disco_real['livre_gb']:.1f} GB livres")
+            _pr(f"  Disco real: {info_disco_real['total_gb']:.1f} GB total | {info_disco_real['livre_gb']:.1f} GB livres")
         else:
-            print("  Disco real: indisponível neste ambiente")
+            _pr("  Disco real: indisponível neste ambiente")
         desenhar_rodape(66)
     elif cmd == "reiniciar":
         print("Salvando conteúdo da RAM no Disco e reiniciando...")
@@ -2893,9 +3088,9 @@ def executar_comando(tokens, cpu, ram, disco, diretorio_atual):
                 desenhar_titulo(f"ARQUIVO ABERTO DENTRO DO MS-PyDOS: {nome}", 70)
                 if conteudo:
                     for linha in conteudo.splitlines()[:200]:
-                        print("  " + linha)
+                        _pr("  " + linha)
                 else:
-                    print("  (arquivo vazio)")
+                    _pr("  (arquivo vazio)")
                 desenhar_rodape(70)
                 print("Arquivo aberto integrado à interface. Use FECHARARQUIVO para fechar a aba.")
     elif cmd == "fechararquivo":
@@ -2982,13 +3177,24 @@ def executar_comando(tokens, cpu, ram, disco, diretorio_atual):
                 print("Erro: Número de ciclos inválido, usando padrão (10).")
         simulador_ms.executar_simulacao(ciclos)
     else:
-        print(f"Comando inválido ou arquivo não encontrado: {cmd}")
+        _ultimo_comando_invalido = True
+        _beep_erro()
+        print("Comando ou nome de arquivo incorretos")
 
     return diretorio_atual
 
 # --- TERMINAL ---
+def _prompt_dos(diretorio_atual):
+    """Formata o diretório atual no estilo autêntico do prompt do MS-DOS:
+    barra invertida, maiúsculas e raiz como 'C:\\>'."""
+    if diretorio_atual in ("", "/"):
+        return "C:\\>"
+    caminho = diretorio_atual.strip("/").replace("/", "\\").upper()
+    return f"C:\\{caminho}>"
+
 def iniciar_terminal(cpu, ram, disco):
     lista_categorias = ", ".join(CATEGORIAS_AJUDA.keys())
+    _cls()
     print(f"\nMS-PyDOS v1.0 - Máquina de Shopping\nUsuário: {usuario_atual}\n"
           f"Digite AJUDA para ver os comandos (por categoria) ou AJUDA <categoria>.\n"
           f"Categorias disponíveis: {lista_categorias}\n")
@@ -3001,55 +3207,198 @@ def iniciar_terminal(cpu, ram, disco):
         if recursos_abertos:
             print(f"(Recursos abertos: {len(recursos_abertos)} - use RECURSOS para gerenciar)")
         try:
-            comando = input(f"C:{diretorio_atual}> ").strip()
+            prompt = f"{_prompt_dos(diretorio_atual)} "
+            comando = input(prompt).strip()
+            # Cada comando abre em sua própria tela limpa (como no MS-DOS real),
+            # com o próprio comando digitado ecoado no topo.
+            _cls()
+            print(prompt + comando)
             tokens = cpu.executar(comando)
             diretorio_atual = executar_comando(tokens, cpu, ram, disco, diretorio_atual)
+            if tokens and not _ultimo_comando_invalido:
+                _beep_ok()
         except KeyboardInterrupt:
             print("\nUse SAIR para sair.")
         except SystemExit:
             dos_desligar_tela_azul()
             raise
         except Exception as e:
+            _beep_erro()
             print(f"[ERRO] {e}")
 
 # --- INICIALIZAÇÃO (BOOT) ---
+def _maximizar_janela():
+    """Forca a janela do terminal para tela inteira/maximizada (quando possivel)."""
+    try:
+        if os.name == "nt":
+            import ctypes
+            SW_MAXIMIZE = 3
+            handle = ctypes.windll.kernel32.GetConsoleWindow()
+            if handle:
+                ctypes.windll.user32.ShowWindow(handle, SW_MAXIMIZE)
+        elif sys.platform.startswith("linux"):
+            for cmd in (["wmctrl", "-r", ":ACTIVE:", "-b",
+                         "add,maximized_vert,maximized_horz"],
+                        ["xdotool", "getactivewindow", "windowstate", "--maximize"]):
+                try:
+                    subprocess.run(cmd, timeout=5)
+                    break
+                except (FileNotFoundError, OSError):
+                    continue
+    except Exception:
+        pass
+
+
+def _travar_janela():
+    """Deixa a janela 'fixa': nao pode ser minimizada (e trava o tamanho).
+    Windows apenas; em outros SO e' ignorado (best-effort)."""
+    try:
+        if os.name != "nt":
+            return
+        import ctypes
+        user32 = ctypes.windll.user32
+        kernel32 = ctypes.windll.kernel32
+        GWL_STYLE = -16
+        WS_MINIMIZEBOX = 0x00020000
+        WS_MAXIMIZEBOX = 0x00010000
+        WS_THICKFRAME = 0x00040000
+        SW_RESTORE = 9
+        SW_MAXIMIZE = 3
+        hwnd = kernel32.GetConsoleWindow()
+        if not hwnd:
+            return
+        user32.GetWindowLongW.restype = ctypes.c_long
+        user32.GetWindowLongW.argtypes = [ctypes.c_void_p, ctypes.c_int]
+        user32.SetWindowLongW.argtypes = [ctypes.c_void_p, ctypes.c_int, ctypes.c_long]
+        estilo = user32.GetWindowLongW(hwnd, GWL_STYLE)
+        novo = estilo & ~WS_MINIMIZEBOX & ~WS_MAXIMIZEBOX & ~WS_THICKFRAME
+        user32.SetWindowLongW(hwnd, GWL_STYLE, novo)
+
+        def _vigiar():
+            while True:
+                try:
+                    if user32.IsIconic(hwnd):
+                        user32.ShowWindow(hwnd, SW_RESTORE)
+                        user32.ShowWindow(hwnd, SW_MAXIMIZE)
+                except Exception:
+                    pass
+                time.sleep(0.2)
+
+        threading.Thread(target=_vigiar, daemon=True).start()
+    except Exception:
+        pass
+
+
+
+
 def inicializar():
     global disco_obj, simulador_ms, gerenciador_usuarios, usuario_atual
     _adquirir_lock_unico()
+    _maximizar_janela()
+    _travar_janela()
     dos_ligar_tela_azul()
-    print("MS-PyDOS v1.0 - Máquina de Shopping - Inicializando...")
-    time.sleep(0.1)
-    print("Inicializando CPU...")
-    print(f"  Processador detectado: {platform.processor() or platform.machine()} "
-          f"({os.cpu_count() or '?'} núcleo(s) lógico(s))")
+    _cls()
+
+    # --- POST / BIOS, no estilo de uma tela real de boot do MS-DOS 4.01 ---
+    _LOGO_MSPYDOS = [
+        "██     ██  ██████          ████████  ██    ██ ████████   ███████   ██████  ",
+        "███   ███ ██    ██         ██     ██  ██  ██  ██     ██ ██     ██ ██    ██ ",
+        "████ ████ ██               ██     ██   ████   ██     ██ ██     ██ ██       ",
+        "██ ███ ██  ██████  ███████ ████████     ██    ██     ██ ██     ██  ██████  ",
+        "██     ██       ██         ██           ██    ██     ██ ██     ██       ██ ",
+        "██     ██ ██    ██         ██           ██    ██     ██ ██     ██ ██    ██ ",
+        "██     ██  ██████          ██           ██    ████████   ███████   ██████  ",
+    ]
+    _LARGURA_LOGO = len(_LOGO_MSPYDOS[0])
+    _BORDA = ("▌▐" * (_LARGURA_LOGO // 2 + 1))[:_LARGURA_LOGO]
+
+    # Todo o boot (logo, banner, assinatura e texto de BIOS/POST) é impresso
+    # com a MESMA margem esquerda, calculada a partir da largura real do
+    # terminal do usuário (que pode estar maximizado, bem mais largo que
+    # 80 colunas). Assim o bloco inteiro fica centralizado na tela de
+    # verdade, e não só dentro dos 78 caracteres do logo.
+    _m = _margem(_LARGURA_LOGO, _largura_terminal_atual())
+
+    def _bp(texto=""):
+        """print() do boot já com a margem de centralização do bloco."""
+        print(_m + texto)
+
+    _bp(COR_TEXTO_BRILHANTE + _BORDA + COR_TEXTO)
+    _bp()
+    time.sleep(0.3)
+    for _linha in _LOGO_MSPYDOS:
+        _bp(COR_TEXTO_BRILHANTE + _linha + COR_TEXTO)
+        time.sleep(0.05)
+    _bp()
+    _bp(COR_TEXTO_BRILHANTE + _BORDA + COR_TEXTO)
+    _bp()
+    time.sleep(0.4)
+    _bp("MS-PyDOS 1.0 Installation Program".center(_LARGURA_LOGO))
+    time.sleep(0.2)
+    _bp("Copyright (c) Machine Shop Inc. 1981-2026".center(_LARGURA_LOGO))
+    _bp()
+    time.sleep(0.5)
+    for _linha_assinatura in ASSINATURA_DANIEL_BARBOSA_ITALICO:
+        _bp((COR_CIANO + _linha_assinatura + COR_TEXTO).center(_LARGURA_LOGO + len(COR_CIANO) + len(COR_TEXTO)))
+        time.sleep(0.05)
+    _bp()
+    time.sleep(0.3)
+    _bp(f"* Versão 1.00-00 {datetime.now().strftime('%Y-%m-%d')} *".center(_LARGURA_LOGO))
+    _bp()
+    time.sleep(0.6)
+    _beep(1200, 90)  # beep de ligar, estilo BIOS de verdade
+    time.sleep(0.4)
+    _bp("MS-PyDOS BIOS - Machine Shop Inc.")
+    time.sleep(0.4)
+    _bp(f"CPU: {platform.processor() or platform.machine()} "
+        f"({os.cpu_count() or '?'} núcleo(s) lógico(s))")
+    time.sleep(0.5)
+    info_ram_boot = obter_info_ram_sistema()
+    total_kb_boot = int(info_ram_boot["total_mb"] * 1024) if info_ram_boot else 655360
+    passo = max(total_kb_boot // 20, 1)
+    contagem = 0
+    while contagem < total_kb_boot:
+        contagem = min(contagem + passo, total_kb_boot)
+        sys.stdout.write(f"\r{_m}Testando memória: {contagem} KB OK")
+        sys.stdout.flush()
+        time.sleep(0.09)
+    print()
+    time.sleep(0.3)
+    _beep(1800, 150)  # beep de "POST OK", igual às placas-mãe de verdade
+    time.sleep(0.5)
+    _bp()
+    _bp("Iniciando o MS-PyDOS...")
+    time.sleep(0.9)
+    _bp()
+
     cpu_obj = CPU()
-    time.sleep(0.05)
-    print("Inicializando RAM...")
     ram_obj = RAM()
+    disco_obj = Disco()
     info_ram_real = obter_info_ram_sistema()
+    info_disco_real = obter_info_disco_sistema()
     if info_ram_real:
         if info_ram_real.get("livre_mb") is not None:
-            print(f"  RAM real detectada: {info_ram_real['total_mb']} MB total | "
-                  f"{info_ram_real['livre_mb']} MB livres")
+            _bp(f"  RAM real detectada: {info_ram_real['total_mb']} MB total | "
+                f"{info_ram_real['livre_mb']} MB livres")
         else:
-            print(f"  RAM real detectada: {info_ram_real['total_mb']} MB total")
+            _bp(f"  RAM real detectada: {info_ram_real['total_mb']} MB total")
     else:
-        print("  RAM real: não foi possível detectar neste ambiente.")
-    time.sleep(0.05)
-    print("Verificando DISCO...")
-    disco_obj = Disco()
-    info_disco_real = obter_info_disco_sistema()
+        _bp("  RAM real: não foi possível detectar neste ambiente.")
+    time.sleep(0.4)
     if info_disco_real:
-        print(f"  Armazenamento real detectado: {info_disco_real['total_gb']:.1f} GB total | "
-              f"{info_disco_real['livre_gb']:.1f} GB livres")
+        _bp(f"  Armazenamento real detectado: {info_disco_real['total_gb']:.1f} GB total | "
+            f"{info_disco_real['livre_gb']:.1f} GB livres")
     else:
-        print("  Armazenamento real: não foi possível detectar neste ambiente.")
-    time.sleep(0.05)
-    print("Iniciando módulo de processos do MS-PyDOS...")
+        _bp("  Armazenamento real: não foi possível detectar neste ambiente.")
+    time.sleep(0.4)
     simulador_ms = SimuladorSO(memoria_total=1024, quantum=2)
-    time.sleep(0.05)
-    print("Inicialização bem sucedida.")
-    time.sleep(0.1)
+    time.sleep(0.4)
+
+    _bp()
+    _bp("MS-PyDOS Versão 1.0")
+    _bp("(C)Copyright Machine Shop Inc. - Daniel Barbosa 1981-2026. Todos os direitos reservados.")
+    _bp()
+    time.sleep(0.8)
 
     gerenciador_usuarios = GerenciadorUsuarios()
     usuario_atual = tela_boas_vindas_usuario(gerenciador_usuarios)

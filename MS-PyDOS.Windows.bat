@@ -11,6 +11,9 @@ chcp 65001 >nul 2>nul
 color 1F
 setlocal EnableDelayedExpansion
 
+REM Forca a janela do console para tela inteira (maximizada) e trava o minimizar
+powershell -NoProfile -Command "Add-Type -TypeDefinition 'using System; using System.Runtime.InteropServices; public class W { [DllImport(\"user32.dll\")] public static extern bool ShowWindow(IntPtr h, int n); [DllImport(\"user32.dll\")] public static extern int GetWindowLong(IntPtr h, int n); [DllImport(\"user32.dll\")] public static extern int SetWindowLong(IntPtr h, int n, int s); [DllImport(\"kernel32.dll\")] public static extern IntPtr GetConsoleWindow(); }'; $h=[W]::GetConsoleWindow(); if($h){ $s=[W]::GetWindowLong($h,-16); $s=$s -band 0xFFFEFFFF -band 0xFFFDFFFF -band 0xFFFBFFFF; [W]::SetWindowLong($h,-16,$s); [W]::ShowWindow($h,3) }" >nul 2>nul
+
 set "APP_DIR=%~dp0"
 if "%APP_DIR:~-1%"=="\" set "APP_DIR=%APP_DIR:~0,-1%"
 set "VENV_DIR=%APP_DIR%\venv"
@@ -49,12 +52,17 @@ set "O3=[3] SAIR       Encerra este instalador"
 set "O3=%O3%!PAD!"
 set "L=| %O3:~0,56% |"
 echo  !L!
+set "O4=[4] EDEX-UI    Abre o MS-PyDOS na interface sci-fi (tela inteira)"
+set "O4=%O4%!PAD!"
+set "L=| %O4:~0,56% |"
+echo  !L!
 echo  +%BAR%+
 echo.
 set /p "OPCAO=   Escolha uma opcao: "
 
 if "%OPCAO%"=="1" goto instalar
 if "%OPCAO%"=="2" goto iniciar
+if "%OPCAO%"=="4" goto edex
 if "%OPCAO%"=="3" exit /b 0
 echo.
 echo  Opcao invalida.
@@ -231,6 +239,33 @@ if exist "%VENV_PY%" (
     pause
 )
 goto menu
+
+REM ===================== EDEX-UI =====================
+:edex
+cls
+if exist "%VENV_PY%" (
+    call :executar_edex
+) else (
+    echo.
+    echo  MS-PyDOS ainda nao foi instalado. Execute a opcao [1] INSTALAR primeiro.
+    echo.
+    pause
+)
+goto menu
+
+:executar_edex
+if not exist "%VENV_PY%" (
+    echo  [ERRO] Python do venv nao encontrado. Execute a opcao [1] INSTALAR.
+    pause
+    goto :eof
+)
+if not exist "%APP%" (
+    echo  [ERRO] MS-PyDOS.py nao encontrado em: %APP%
+    pause
+    goto :eof
+)
+"%VENV_PY%" "%APP%" --edex
+goto :eof
 
 REM ===================== EXECUTAR =====================
 :executar
