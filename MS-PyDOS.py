@@ -353,179 +353,158 @@ def _migrar_arquivos_antigos_se_necessario():
 _migrar_arquivos_antigos_se_necessario()
 
 # --- CLASSE DISCO ---
+# A unidade C: do MS-PyDOS é uma pasta REAL em disco (RAIZ_DISCO_REAL),
+# não mais uma estrutura simulada dentro de um JSON. Todos os comandos
+# da categoria ARQUIVOS (LISTAR, ARVORE, TIPO, ESCREVER, APAGAR,
+# RENOMEAR, COPIAR, CRIARPASTA, REMOVERPASTA, CD, MOVER, COPIARPASTA,
+# LOCALIZAR, ORDENAR, COMPARAR, ATRIBUTOS, APAGARVORE, RESTAURAR) leem
+# e gravam arquivos e pastas de verdade usando os módulos padrão do
+# Python para manipulação de arquivos (os / shutil), e por isso os
+# arquivos criados aqui continuam existindo em disco, visíveis fora do
+# MS-PyDOS (ex.: no Explorador de Arquivos), mesmo depois do programa
+# fechar. Um único diretório-raiz real é usado como "sandbox" da
+# unidade C:, para o simulador nunca acabar apagando/sobrescrevendo
+# arquivos do usuário que estejam fora dele.
+PASTA_DISCO_REAL = os.path.join(PASTA_DADOS, "DISCO_C")
+os.makedirs(PASTA_DISCO_REAL, exist_ok=True)
+
+
 class Disco:
     def __init__(self, arquivo=None, tamanho_max_kb=512 * 1024):
+        # 'arquivo' guarda só METADADOS que não são conteúdo de arquivo
+        # (atributos R/H/S/A por caminho) num JSON à parte; o conteúdo
+        # real de arquivos/pastas vive inteiramente no sistema de
+        # arquivos de verdade, dentro de self.raiz.
         self.arquivo = arquivo or CAMINHO_DADOS_PADRAO
+        self.raiz = PASTA_DISCO_REAL
         self.tamanho_max_kb = tamanho_max_kb
         self.rotulo = "MS-PYDOS"
-        if not os.path.exists(self.arquivo):
-            self.formatar()
+        os.makedirs(self.raiz, exist_ok=True)
+
+    # ---- infraestrutura: caminho virtual (estilo DOS) -> caminho real ----
+    def _caminho_real(self, caminho_virtual):
+        """Converte um caminho virtual ('/pasta/arquivo.txt') no caminho
+        real correspondente dentro da unidade C: de verdade, impedindo
+        que qualquer operação escape da raiz (proteção de path traversal)."""
+        partes = [p for p in str(caminho_virtual).strip("/").split("/") if p and p != "."]
+        raiz_normalizada = os.path.normpath(self.raiz)
+        caminho = os.path.normpath(os.path.join(raiz_normalizada, *partes)) if partes else raiz_normalizada
+        if caminho != raiz_normalizada and not caminho.startswith(raiz_normalizada + os.sep):
+            caminho = raiz_normalizada
+        return caminho
 
     def formatar(self):
-        _gravar_secao(self.arquivo, "disco", {})
-
-    def _carregar(self):
-        return _ler_secao(self.arquivo, "disco")
-
-    def _salvar(self, dados):
-        _gravar_secao(self.arquivo, "disco", dados)
-
-    def _dividir_caminho(self, caminho):
-        return [p for p in caminho.strip("/").split("/") if p]
-
-    def _navegar(self, dados, partes_caminho, criar_faltando=False):
-        for parte in partes_caminho[:-1]:
-            if parte not in dados:
-                if criar_faltando:
-                    dados[parte] = {}
-                else:
-                    return None
-            dados = dados[parte]
-            if not isinstance(dados, dict):
-                return None
-        return dados
+        if os.path.isdir(self.raiz):
+            for item in os.listdir(self.raiz):
+                caminho_item = os.path.join(self.raiz, item)
+                try:
+                    if os.path.isdir(caminho_item) and not os.path.islink(caminho_item):
+                        shutil.rmtree(caminho_item, ignore_errors=True)
+                    else:
+                        os.remove(caminho_item)
+                except OSError:
+                    pass
+        os.makedirs(self.raiz, exist_ok=True)
+        _gravar_secao(self.arquivo, "atributos", {})
 
     def escrever_arquivo(self, caminho_arquivo, conteudo):
-        dados = self._carregar()
-        partes_caminho = self._dividir_caminho(caminho_arquivo)
-        if not partes_caminho:
-            print("[DISCO] Caminho de arquivo inválido.")
+        caminho_real = self._caminho_real(caminho_arquivo)
+        if os.path.isdir(caminho_real):
+            print("[DISCO] Já existe uma pasta com esse nome.")
             return
-        pai = self._navegar(dados, partes_caminho, criar_faltando=True)
-        if pai is None:
-            print("[DISCO] Caminho inválido")
-            return
-        pai[partes_caminho[-1]] = conteudo
-        if self._obter_espaco_usado_kb(dados) <= self.tamanho_max_kb:
-            self._salvar(dados)
-        else:
-            print("[DISCO] Espaço insuficiente! Escrita falhou.")
-            del pai[partes_caminho[-1]]
+        try:
+            pasta_pai = os.path.dirname(caminho_real)
+            if pasta_pai:
+                os.makedirs(pasta_pai, exist_ok=True)
+            with open(caminho_real, "w", encoding="utf-8") as f:
+                f.write(conteudo if isinstance(conteudo, str) else str(conteudo))
+        except OSError as e:
+            print(f"[DISCO] Erro ao escrever arquivo: {e}")
 
     def ler_arquivo(self, caminho_arquivo):
-        dados = self._carregar()
-        partes_caminho = self._dividir_caminho(caminho_arquivo)
-        if not partes_caminho:
+        caminho_real = self._caminho_real(caminho_arquivo)
+        if not os.path.exists(caminho_real):
             return "[Arquivo não encontrado]"
-        pai = dados
-        for parte in partes_caminho[:-1]:
-            if parte in pai and isinstance(pai[parte], dict):
-                pai = pai[parte]
-            else:
-                return "[Arquivo não encontrado]"
-        ultima_parte = partes_caminho[-1]
-        if ultima_parte in pai:
-            if isinstance(pai[ultima_parte], dict):
-                return "[É uma pasta]"
-            return pai[ultima_parte]
-        return "[Arquivo não encontrado]"
+        if os.path.isdir(caminho_real):
+            return "[É uma pasta]"
+        try:
+            with open(caminho_real, "r", encoding="utf-8", errors="replace") as f:
+                return f.read()
+        except OSError as e:
+            return f"[Erro ao ler arquivo: {e}]"
 
     def apagar_arquivo(self, caminho_arquivo):
-        dados = self._carregar()
-        partes_caminho = self._dividir_caminho(caminho_arquivo)
-        if not partes_caminho:
-            return
-        pai = self._navegar(dados, partes_caminho)
-        if pai and partes_caminho[-1] in pai:
-            del pai[partes_caminho[-1]]
-            self._salvar(dados)
+        caminho_real = self._caminho_real(caminho_arquivo)
+        if caminho_real == os.path.normpath(self.raiz):
+            return  # nunca apaga a raiz da unidade C:
+        try:
+            if os.path.isdir(caminho_real) and not os.path.islink(caminho_real):
+                shutil.rmtree(caminho_real)
+            elif os.path.exists(caminho_real):
+                try:
+                    os.chmod(caminho_real, 0o666)  # garante exclusão mesmo se estava +R
+                except OSError:
+                    pass
+                os.remove(caminho_real)
+        except OSError as e:
+            print(f"[DISCO] Erro ao apagar: {e}")
 
     def criar_pasta(self, caminho_pasta):
-        dados = self._carregar()
-        partes_caminho = self._dividir_caminho(caminho_pasta)
-        if not partes_caminho:
-            print("[DISCO] Caminho de pasta inválido.")
-            return
-        pai = self._navegar(dados, partes_caminho, criar_faltando=True)
-        if pai is None:
-            print("[DISCO] Caminho inválido")
-            return
-        nome_pasta = partes_caminho[-1]
-        if nome_pasta not in pai:
-            pai[nome_pasta] = {}
-            self._salvar(dados)
-        else:
+        caminho_real = self._caminho_real(caminho_pasta)
+        if os.path.exists(caminho_real):
             print("[DISCO] Pasta já existe")
+            return
+        try:
+            os.makedirs(caminho_real)
+        except OSError as e:
+            print(f"[DISCO] Caminho inválido: {e}")
 
     def listar_diretorio(self, caminho_pasta):
-        dados = self._carregar()
-        partes_caminho = self._dividir_caminho(caminho_pasta)
-        if len(partes_caminho) == 0:
-            pai = dados
-        else:
-            pai = dados
-            for parte in partes_caminho:
-                if parte in pai and isinstance(pai[parte], dict):
-                    pai = pai[parte]
-                else:
-                    return []
-        if isinstance(pai, dict):
-            return list(pai.keys())
-        return []
+        caminho_real = self._caminho_real(caminho_pasta)
+        if not os.path.isdir(caminho_real):
+            return []
+        try:
+            return os.listdir(caminho_real)
+        except OSError:
+            return []
 
     def e_pasta(self, caminho):
-        dados = self._carregar()
-        partes_caminho = self._dividir_caminho(caminho)
-        if len(partes_caminho) == 0:
-            return True
-        pai = dados
-        for parte in partes_caminho[:-1]:
-            if parte in pai and isinstance(pai[parte], dict):
-                pai = pai[parte]
-            else:
-                return False
-        ultimo = partes_caminho[-1]
-        return isinstance(pai.get(ultimo, None), dict)
+        return os.path.isdir(self._caminho_real(caminho))
 
-    def _obter_espaco_usado_kb(self, dados):
-        def percorrer(d):
-            total = 0
-            for k, v in d.items():
-                total += len(k.encode("utf-8"))
-                if isinstance(v, dict):
-                    total += percorrer(v)
-                else:
-                    total += len(v.encode("utf-8"))
-            return total
-        return percorrer(dados) // 1024
+    def _contar_arquivos(self):
+        total = 0
+        for _raiz_atual, _pastas, arquivos in os.walk(self.raiz):
+            total += len(arquivos)
+        return total
+
+    def _contar_pastas(self):
+        total = 0
+        for _raiz_atual, pastas, _arquivos in os.walk(self.raiz):
+            total += len(pastas)
+        return total
+
+    def _obter_espaco_usado_kb(self):
+        total_bytes = 0
+        for raiz_atual, _pastas, arquivos in os.walk(self.raiz):
+            for nome in arquivos:
+                try:
+                    total_bytes += os.path.getsize(os.path.join(raiz_atual, nome))
+                except OSError:
+                    pass
+        return total_bytes // 1024
 
     def obter_info(self):
-        dados = self._carregar()
-        usado = self._obter_espaco_usado_kb(dados)
+        usado_kb = self._obter_espaco_usado_kb()
         return {
             "max_kb": self.tamanho_max_kb,
-            "usado_kb": usado,
-            "livre_kb": self.tamanho_max_kb - usado,
-            "total_arquivos": self._contar_arquivos(dados)
+            "usado_kb": usado_kb,
+            "livre_kb": max(self.tamanho_max_kb - usado_kb, 0),
+            "total_arquivos": self._contar_arquivos(),
         }
 
-    def _contar_arquivos(self, d):
-        contador = 0
-        for v in d.values():
-            if isinstance(v, dict):
-                contador += self._contar_arquivos(v)
-            else:
-                contador += 1
-        return contador
-
     def escrever_em_massa(self, dicionario_dados):
-        dados = self._carregar()
-
         for caminho_arquivo, conteudo in dicionario_dados.items():
-            partes_caminho = self._dividir_caminho(caminho_arquivo)
-            if not partes_caminho:
-                continue
-
-            pai = dados
-            for parte in partes_caminho[:-1]:
-                if parte not in pai or not isinstance(pai[parte], dict):
-                    pai[parte] = {}
-                pai = pai[parte]
-            pai[partes_caminho[-1]] = conteudo
-        if self._obter_espaco_usado_kb(dados) <= self.tamanho_max_kb:
-            self._salvar(dados)
-        else:
-            print("[DISCO] Espaço insuficiente! Escrita em massa falhou.")
+            self.escrever_arquivo(caminho_arquivo, conteudo)
 
 # ============================================================
 # GERENCIAMENTO DE USUÁRIOS (cadastro/login real, persistente em disco)
@@ -787,7 +766,6 @@ class PCB:
     tempo_cpu: int
     tempo_total: int
     memoria_alocada: int
-    arquivos_abertos: List[str] = field(default_factory=list)
     recursos: List[TipoRecurso] = field(default_factory=list)
     pc: int = 0
     tempo_chegada: float = 0
@@ -803,41 +781,6 @@ class ParticaoMemoria:
     fim: int = 0
 
 @dataclass
-class Arquivo:
-    nome: str
-    tamanho: int
-    aberto: bool
-    pid_dono: int
-    dados: str
-    data_criacao: str
-
-# ------------------------------------------------------------
-# PERSISTÊNCIA REAL DOS ARQUIVOS DO SIMULADOR SO (ARQUIVOSSO)
-# Antes esses arquivos existiam só na RAM e sumiam ao fechar o
-# programa. Agora eles são salvos de verdade, na seção "arquivosso"
-# do mesmo arquivo único (ms-pydos-dados.json), então continuam lá
-# mesmo depois de fechar e abrir o MS-PyDOS de novo.
-# ------------------------------------------------------------
-def _arquivo_so_para_dict(arquivo):
-    return {
-        "nome": arquivo.nome,
-        "tamanho": arquivo.tamanho,
-        "pid_dono": arquivo.pid_dono,
-        "dados": arquivo.dados,
-        "data_criacao": arquivo.data_criacao,
-    }
-
-def _dict_para_arquivo_so(nome, info):
-    return Arquivo(
-        nome=info.get("nome", nome),
-        tamanho=info.get("tamanho", 0),
-        aberto=False,  # ao carregar, os arquivos sempre começam fechados
-        pid_dono=info.get("pid_dono", 0),
-        dados=info.get("dados", ""),
-        data_criacao=info.get("data_criacao", ""),
-    )
-
-@dataclass
 class Recurso:
     tipo: TipoRecurso
     disponivel: bool = True
@@ -845,7 +788,7 @@ class Recurso:
 
 
 class SimuladorSO:
-    def __init__(self, memoria_total=1024, quantum=2, arquivo_persistencia=None):
+    def __init__(self, memoria_total=1024, quantum=2):
         # Processos
         self.processos: Dict[int, PCB] = {}
         self.proximo_pid = 1000
@@ -861,10 +804,6 @@ class SimuladorSO:
         self.memoria_utilizada = 0
         self.particoes = []
         self.criar_particoes()
-        # Arquivos (persistidos de verdade, ver _carregar_arquivos_persistidos)
-        self.arquivo_persistencia = arquivo_persistencia or CAMINHO_DADOS_PADRAO
-        self.arquivos = {}
-        self._carregar_arquivos_persistidos()
         # Recursos
         self.recursos = {
             TipoRecurso.IMPRESSORA: Recurso(TipoRecurso.IMPRESSORA),
@@ -1051,7 +990,6 @@ class SimuladorSO:
             print("Processo já terminado.")
             return
         self.liberar_memoria(pid)
-        self.fechar_arquivos_processo(pid)
         self.liberar_recursos_processo(pid)
         self.remover_fila_prontos(pid)
         if pid in self.fila_bloqueados:
@@ -1076,118 +1014,6 @@ class SimuladorSO:
             _pr("Nenhum processo ativo.")
         desenhar_rodape(80)
         print(f"Processos ativos: {self.num_processos} | Total criados: {self.total_processos_criados} | Total finalizados: {self.total_processos_finalizados}")
-
-    # ---------------- SISTEMA DE ARQUIVOS ----------------
-    def _carregar_arquivos_persistidos(self):
-        dados_salvos = _ler_secao(self.arquivo_persistencia, "arquivosso")
-        for nome, info in dados_salvos.items():
-            self.arquivos[nome] = _dict_para_arquivo_so(nome, info)
-
-    def _salvar_arquivos_persistidos(self):
-        dados = {nome: _arquivo_so_para_dict(arquivo) for nome, arquivo in self.arquivos.items()}
-        _gravar_secao(self.arquivo_persistencia, "arquivosso", dados)
-
-    def criar_arquivo(self, nome, pid_dono):
-        nome = nome.strip()
-        if nome == "":
-            self.log_evento("ERRO: Nome vazio")
-            return False
-        if nome in self.arquivos:
-            self.log_evento("ERRO: Arquivo já existe")
-            return False
-        pcb = self.processos.get(pid_dono)
-        if pcb is None or pcb.estado == EstadoProcesso.TERMINADO:
-            self.log_evento("ERRO: Processo dono inválido")
-            return False
-        arquivo = Arquivo(nome=nome, tamanho=0, aberto=False, pid_dono=pid_dono, dados="", data_criacao=datetime.now().strftime("%d/%m/%Y %H:%M:%S"))
-        self.arquivos[nome] = arquivo
-        self._salvar_arquivos_persistidos()
-        self.log_evento(f"Arquivo '{nome}' criado")
-        return True
-
-    def abrir_arquivo(self, nome):
-        arquivo = self.arquivos.get(nome)
-        if arquivo is None:
-            self.log_evento("ERRO: Arquivo não encontrado")
-            return False
-        if arquivo.aberto:
-            self.log_evento("ERRO: Arquivo já aberto")
-            return False
-        arquivo.aberto = True
-        pcb = self.processos.get(arquivo.pid_dono)
-        if pcb is not None and nome not in pcb.arquivos_abertos:
-            pcb.arquivos_abertos.append(nome)
-        self.log_evento(f"Arquivo '{nome}' aberto")
-        return True
-
-    def fechar_arquivo(self, nome):
-        arquivo = self.arquivos.get(nome)
-        if arquivo is None:
-            self.log_evento("ERRO: Arquivo não encontrado")
-            return False
-        if not arquivo.aberto:
-            self.log_evento("ERRO: Arquivo já fechado")
-            return False
-        arquivo.aberto = False
-        pcb = self.processos.get(arquivo.pid_dono)
-        if pcb is not None and nome in pcb.arquivos_abertos:
-            pcb.arquivos_abertos.remove(nome)
-        self.log_evento(f"Arquivo '{nome}' fechado")
-        return True
-
-    def escrever_arquivo(self, nome, dados):
-        arquivo = self.arquivos.get(nome)
-        if arquivo is None:
-            print("Arquivo não encontrado.")
-            return False
-        if not arquivo.aberto:
-            print("Abra o arquivo primeiro.")
-            return False
-        arquivo.dados += dados + "\n"
-        bytes_dados = len(arquivo.dados.encode("utf-8"))
-        arquivo.tamanho = max(1, bytes_dados // 1024 + 1)
-        self._salvar_arquivos_persistidos()
-        self.log_evento(f"Dados escritos em '{nome}'")
-        return True
-
-    def ler_arquivo(self, nome):
-        arquivo = self.arquivos.get(nome)
-        if arquivo is None:
-            print("Arquivo não encontrado.")
-            return None
-        if not arquivo.aberto:
-            print("Abra o arquivo primeiro.")
-            return None
-        self.log_evento(f"Arquivo '{nome}' lido")
-        return arquivo.dados
-
-    def deletar_arquivo(self, nome):
-        arquivo = self.arquivos.get(nome)
-        if arquivo is None:
-            print("Arquivo não encontrado.")
-            return False
-        if arquivo.aberto:
-            print("Feche o arquivo antes de deletar.")
-            return False
-        del self.arquivos[nome]
-        self._salvar_arquivos_persistidos()
-        self.log_evento(f"Arquivo '{nome}' deletado")
-        return True
-
-    def fechar_arquivos_processo(self, pid):
-        for arquivo in self.arquivos.values():
-            if arquivo.pid_dono == pid and arquivo.aberto:
-                arquivo.aberto = False
-
-    def listar_arquivos(self):
-        desenhar_titulo("ARQUIVOS DO SISTEMA", 70)
-        if not self.arquivos:
-            _pr("Nenhum arquivo cadastrado.")
-        else:
-            for arquivo in self.arquivos.values():
-                status = "ABERTO" if arquivo.aberto else "FECHADO"
-                _pr(f"Nome: {arquivo.nome} | Tamanho: {arquivo.tamanho} KB | Status: {status} | Dono PID: {arquivo.pid_dono} | Criado em: {arquivo.data_criacao}")
-        desenhar_rodape(70)
 
     # ---------------- RECURSOS E SEMÁFOROS ----------------
     def semaforo_p(self, nome):
@@ -1297,7 +1123,6 @@ class SimuladorSO:
         _pr(f"Processos finalizados  : {self.total_processos_finalizados}")
         _pr(f"Processos ativos       : {self.num_processos}")
         _pr(f"Memória utilizada      : {self.memoria_utilizada} / {self.memoria_total} KB")
-        _pr(f"Arquivos               : {len(self.arquivos)}")
         desenhar_rodape(60)
 
     def carregar_processos_exemplo(self):
@@ -1310,34 +1135,6 @@ class SimuladorSO:
         ]
         for nome, prioridade, tempo, memoria in exemplos:
             self.criar_processo(nome, prioridade, tempo, memoria)
-
-    # ---------------- ALIASES (compatibilidade com os comandos do MS-PyDOS) ----------------
-    def criar_arquivo_so(self, nome, pid_dono, dados=""):
-        if not self.criar_arquivo(nome, pid_dono):
-            return False
-        if dados:
-            self.abrir_arquivo(nome)
-            self.escrever_arquivo(nome, dados)
-            self.fechar_arquivo(nome)
-        return True
-
-    def abrir_arquivo_so(self, nome):
-        return self.abrir_arquivo(nome)
-
-    def fechar_arquivo_so(self, nome):
-        return self.fechar_arquivo(nome)
-
-    def escrever_arquivo_so(self, nome, dados):
-        return self.escrever_arquivo(nome, dados)
-
-    def ler_arquivo_so(self, nome):
-        return self.ler_arquivo(nome)
-
-    def deletar_arquivo_so(self, nome):
-        return self.deletar_arquivo(nome)
-
-    def listar_arquivos_so(self):
-        return self.listar_arquivos()
 
 
 # ============================================================
@@ -1395,8 +1192,16 @@ ABREVIACOES_COMANDOS = {
     "fmt": "formatar",
     "sysinfo": "sistemainfo",
     "apps": "listaraplicativos",
-    "google": "pesquisar",
     "search": "pesquisar",
+    "gpesquisar": "google",
+    "openf": "abrirarquivo",
+    "closef": "fechararquivo",
+    "touch": "criararquivo",
+    "newfile": "criararquivo",
+    "datetime": "datahora",
+    "dt": "datahora",
+    "winutil": "loja",
+    "store": "loja",
     # --- Usuários ---
     "adduser": "cadastrar",
     "users": "usuarios",
@@ -1409,15 +1214,8 @@ ABREVIACOES_COMANDOS = {
     "cycle": "executarciclo",
     "memso": "exibirmemoria",
     "memtest": "testarmemoria",
-    "touch": "criararquivoso",
-    "open": "abrirarquivo",
     "recursos": "recursos",
     "limpararm": "limpararmazenamento",
-    "close": "fechararquivo",
-    "write": "escreverarquivo",
-    "cat": "lerarquivo",
-    "rm": "apagararquivo",
-    "ls": "listararquivos",
     "req": "solicitarrecurso",
     "rel": "liberarrecurso",
     "lsres": "listarrecursos",
@@ -1448,6 +1246,7 @@ CATEGORIAS_AJUDA = {
         ("arvore", "Mostrar estrutura de pastas recursivamente"),
         ("tipo", "Exibir conteúdo de um arquivo (TIPO nomearquivo)"),
         ("escrever", "Criar ou sobrescrever um arquivo (ESCREVER nomearquivo conteudo)"),
+        ("criararquivo", "Criar um arquivo vazio, com extensão (CRIARARQUIVO nomearquivo.ext [conteudo])"),
         ("apagar", "Excluir um arquivo (APAGAR nomearquivo)"),
         ("renomear", "Renomear um arquivo (RENOMEAR nome_antigo nome_novo)"),
         ("copiar", "Copiar um arquivo (COPIAR arquivo_origem arquivo_destino)"),
@@ -1462,19 +1261,19 @@ CATEGORIAS_AJUDA = {
         ("atributos", "Ver/alterar atributos de um arquivo (ATRIBUTOS arquivo [+R|-R|+H|-H])"),
         ("apagarvore", "Excluir uma pasta e todo o seu conteúdo, recursivamente"),
         ("restaurar", "Restaurar o último arquivo apagado (equivalente ao UNDELETE)"),
+        ("abrirarquivo", "Abrir um arquivo e mantê-lo aberto na sessão (ABRIRARQUIVO nomearquivo)"),
+        ("fechararquivo", "Fechar o arquivo aberto na sessão (FECHARARQUIVO)"),
     ],
     "sistema": [
         ("ajuda", "Mostrar esta ajuda (AJUDA ou AJUDA categoria)"),
         ("cls", "Limpar a tela"),
         ("ver", "Exibir a versão do MS-PyDOS"),
-        ("data", "Exibir a data atual"),
-        ("hora", "Exibir a hora atual"),
+        ("datahora", "Exibir data e hora atuais juntas (DATAHORA)"),
         ("vol", "Exibir o rótulo e o espaço do volume do disco"),
         ("rotulo", "Alterar o rótulo do volume (ROTULO novorotulo)"),
         ("sistemainfo", "Exibir informações do sistema"),
         ("reiniciar", "Salvar RAM e reiniciar MS-PyDOS"),
         ("formatar", "Formatar o disco"),
-        ("limparcpu", "Resetar ciclos da CPU para 0"),
         ("pausa", "Pausar até o usuário pressionar ENTER"),
         ("ams", "Executar varredura do Serviço Anti-Malware"),
         ("configuracoes", "Abrir o Painel de Configurações (Wi-Fi, Bluetooth, Rede, Sistema)"),
@@ -1495,6 +1294,7 @@ CATEGORIAS_AJUDA = {
         ("limparram", "Limpar todo o conteúdo da RAM"),
         ("mostrarram", "Exibir conteúdo atual da RAM"),
         ("limpararmazenamento", "Limpar tudo: temp, cache e armazenamento - Downloads/Lixeira (LIMPARARMAZENAMENTO)"),
+        ("limparcpu", "Resetar ciclos da CPU para 0"),
     ],
     "aplicativos": [
         ("imprimir", "Imprimir texto na tela (IMPRIMIR texto)"),
@@ -1503,9 +1303,11 @@ CATEGORIAS_AJUDA = {
         ("abrir", "Abrir um aplicativo real do sistema (ABRIR <nome>)"),
         ("listaraplicativos", "Listar os aplicativos REALMENTE instalados no sistema operacional"),
         ("recursos", "Ver os recursos abertos pelo MS-PyDOS (RECURSOS)"),
+        ("loja", "Abrir a loja de apps/config do sistema via PowerShell - WinUtil (LOJA)"),
     ],
     "pesquisar": [
-        ("pesquisar", "Pesquisar no Google (PESQUISAR termo de busca)"),
+        ("pesquisar", "Pesquisar no DuckDuckGo + Wikipédia, direto no terminal (PESQUISAR termo de busca)"),
+        ("google", "Pesquisar no Google, abrindo o navegador (GOOGLE termo de busca)"),
         ("youtube", "Pesquisar no YouTube (YOUTUBE termo de busca)"),
         ("piratebay", "Buscar no Pirate Bay (PIRATEBAY termo)"),
         ("massgrave", "Abrir ativador MAS via PowerShell (MAS)"),
@@ -1528,15 +1330,6 @@ CATEGORIAS_AJUDA = {
         ("executarsimulacao", "Executar a simulação automática (EXECUTARSIMULACAO [ciclos])"),
         ("estatisticas", "Exibir estatísticas gerais do simulador"),
         ("mostrarlog", "Exibir o log de eventos do simulador"),
-    ],
-    "arquivosso": [
-        ("criararquivoso", "Criar arquivo no simulador (CRIARARQUIVOSO nome pid_dono [dados])"),
-        ("abrirarquivo", "Abrir um arquivo do simulador (ABRIRARQUIVO nome)"),
-        ("fechararquivo", "Fechar um arquivo do simulador (FECHARARQUIVO nome)"),
-        ("escreverarquivo", "Escrever dados em um arquivo (ESCREVERARQUIVO nome dados)"),
-        ("lerarquivo", "Ler o conteúdo de um arquivo (LERARQUIVO nome)"),
-        ("apagararquivo", "Apagar um arquivo do simulador (APAGARARQUIVO nome)"),
-        ("listararquivos", "Listar arquivos cadastrados no simulador"),
     ],
     "recursos": [
         ("solicitarrecurso", "Solicitar recurso (SOLICITARRECURSO pid IMPRESSORA/DISCO/FITA)"),
@@ -1563,6 +1356,7 @@ _verificacao_ativa = False            # estado do VERIFY ON/OFF
 substituicoes_unidade = {}            # SUBST: letra -> caminho
 pilha_apagados = []                   # últimos arquivos apagados, para UNDELETE/RESTAURAR
 historico_ordenado = []               # comandos digitados em ordem, para DOSKEY/HISTORICO
+_arquivo_aberto = {"nome": None, "caminho": None, "conteudo": None}  # ABRIRARQUIVO/FECHARARQUIVO
 
 def registrar_comando(cmd, ram):
     cmd_lower = cmd.lower()
@@ -2302,10 +2096,105 @@ def pesquisar_google(termo):
     """Abre uma pesquisa real no Google, no navegador padrão do sistema."""
     termo = termo.strip()
     if not termo:
-        print("Uso: PESQUISAR termo de busca")
+        print("Uso: GOOGLE termo de busca")
         return
     url = f"https://www.google.com/search?q={quote_plus(termo)}"
     abrir_site_integrado(url, f"Pesquisa Google: {termo}")
+
+def pesquisar_duckduckgo_wikipedia(termo):
+    """Pesquisa o termo no DuckDuckGo (Instant Answer API) e na Wikipédia
+    (API de busca em pt), e mostra os resultados combinados direto no
+    terminal do MS-PyDOS (sem abrir navegador)."""
+    import urllib.request
+    import urllib.error
+
+    termo = termo.strip()
+    if not termo:
+        print("Uso: PESQUISAR termo de busca  (ex: PESQUISAR receita de bolo)")
+        return
+
+    print(f"Pesquisando por '{termo}' no DuckDuckGo e na Wikipédia...\n")
+
+    # --- DuckDuckGo (Instant Answer API) ---
+    print("=== DuckDuckGo ===")
+    try:
+        url_ddg = ("https://api.duckduckgo.com/?q=" + quote_plus(termo)
+                   + "&format=json&no_html=1&skip_disambig=1")
+        req = urllib.request.Request(url_ddg, headers={"User-Agent": "MS-PyDOS/1.0"})
+        with urllib.request.urlopen(req, timeout=8) as resp:
+            dados = json.loads(resp.read().decode("utf-8", errors="ignore"))
+        resumo = dados.get("AbstractText") or dados.get("Answer") or ""
+        if resumo:
+            print(resumo.strip())
+            fonte = dados.get("AbstractURL")
+            if fonte:
+                print(f"Fonte: {fonte}")
+        else:
+            topicos = dados.get("RelatedTopics") or []
+            mostrados = 0
+            for t in topicos:
+                texto = t.get("Text") if isinstance(t, dict) else None
+                if texto:
+                    print(f"- {texto}")
+                    mostrados += 1
+                if mostrados >= 5:
+                    break
+            if mostrados == 0:
+                print("Nenhum resumo direto encontrado.")
+    except (urllib.error.URLError, TimeoutError, Exception) as e:
+        print(f"[ERRO] Não foi possível consultar o DuckDuckGo: {e}")
+
+    # --- Wikipédia (API de busca) ---
+    print("\n=== Wikipédia ===")
+    try:
+        url_wiki = ("https://pt.wikipedia.org/w/api.php?action=query&list=search"
+                    "&srsearch=" + quote_plus(termo) + "&format=json&srlimit=3")
+        req = urllib.request.Request(url_wiki, headers={"User-Agent": "MS-PyDOS/1.0"})
+        with urllib.request.urlopen(req, timeout=8) as resp:
+            dados = json.loads(resp.read().decode("utf-8", errors="ignore"))
+        resultados = dados.get("query", {}).get("search", [])
+        if not resultados:
+            print("Nenhum resultado encontrado.")
+        else:
+            for r in resultados:
+                titulo = r.get("title", "")
+                trecho = re.sub("<[^<]+?>", "", r.get("snippet", ""))
+                print(f"- {titulo}: {trecho}")
+                print(f"  https://pt.wikipedia.org/wiki/{quote_plus(titulo.replace(' ', '_'))}")
+    except (urllib.error.URLError, TimeoutError, Exception) as e:
+        print(f"[ERRO] Não foi possível consultar a Wikipédia: {e}")
+
+    print("\nDica: use GOOGLE termo de busca para abrir a pesquisa no navegador.")
+
+def abrir_arquivo_terminal(disco, diretorio_atual, nome_arquivo):
+    """Abre um arquivo (lê do disco e mantém 'aberto' na sessão do terminal),
+    imprimindo o conteúdo, de forma similar a um OPEN de arquivo real."""
+    nome_arquivo = nome_arquivo.strip()
+    if not nome_arquivo:
+        print("Uso: ABRIRARQUIVO nomearquivo")
+        return
+    caminho = obter_caminho_absoluto(nome_arquivo, diretorio_atual)
+    try:
+        conteudo = disco.ler_arquivo(caminho)
+    except Exception as e:
+        _beep_erro()
+        print(f"[ERRO] Não foi possível abrir '{nome_arquivo}': {e}")
+        return
+    _arquivo_aberto["nome"] = nome_arquivo
+    _arquivo_aberto["caminho"] = caminho
+    _arquivo_aberto["conteudo"] = conteudo
+    print(f"Arquivo '{nome_arquivo}' aberto.\n")
+    print(conteudo)
+
+def fechar_arquivo_terminal():
+    """Fecha o arquivo atualmente aberto na sessão do terminal (ABRIRARQUIVO)."""
+    if not _arquivo_aberto["nome"]:
+        print("Nenhum arquivo está aberto no momento.")
+        return
+    print(f"Arquivo '{_arquivo_aberto['nome']}' fechado.")
+    _arquivo_aberto["nome"] = None
+    _arquivo_aberto["caminho"] = None
+    _arquivo_aberto["conteudo"] = None
 
 def pesquisar_youtube(termo):
     termo = termo.strip()
@@ -2332,6 +2221,36 @@ def executar_massgrave():
         def _beep_progresso():
             # beep curto periódico enquanto o script roda, como o "tic" de
             # atividade que aparece em ferramentas desse tipo (ex.: MassGrave)
+            while not parar_beep.wait(1.5):
+                _beep(700, 60)
+
+        thread_beep = threading.Thread(target=_beep_progresso, daemon=True)
+        thread_beep.start()
+        try:
+            subprocess.run(["powershell", "-NoProfile", "-Command", comando], check=False)
+        finally:
+            parar_beep.set()
+        _beep(1400, 150)
+    except Exception as e:
+        _beep_erro()
+        print(f"[ERRO] Não foi possível iniciar o PowerShell: {e}")
+
+def executar_loja():
+    """Abre o WinUtil (Chris Titus Tech) via PowerShell (christitus.com/win) -
+    ferramenta para instalar/remover apps e configurar o Windows."""
+    print("AVISO: isso vai baixar e executar o WinUtil (Chris Titus Tech) via PowerShell")
+    print("do sistema (irm https://christitus.com/win | iex).")
+    confirm = input("Deseja continuar? (s/n): ").strip().lower()
+    if confirm not in ("s", "sim", "y", "yes"):
+        print("Operação cancelada.")
+        return
+    try:
+        comando = 'irm https://christitus.com/win | iex'
+        print("Iniciando PowerShell com o WinUtil (loja de apps/config)...")
+        _beep(900, 100)
+        parar_beep = threading.Event()
+
+        def _beep_progresso():
             while not parar_beep.wait(1.5):
                 _beep(700, 60)
 
@@ -2722,7 +2641,19 @@ def executar_comando(tokens, cpu, ram, disco, diretorio_atual):
         if len(tokens) < 2:
             print("Uso: PESQUISAR termo de busca  (ex: PESQUISAR receita de bolo)")
         else:
+            pesquisar_duckduckgo_wikipedia(" ".join(tokens[1:]))
+    elif cmd == "google":
+        if len(tokens) < 2:
+            print("Uso: GOOGLE termo de busca  (ex: GOOGLE receita de bolo)")
+        else:
             pesquisar_google(" ".join(tokens[1:]))
+    elif cmd == "abrirarquivo":
+        if len(tokens) < 2:
+            print("Uso: ABRIRARQUIVO nomearquivo")
+        else:
+            abrir_arquivo_terminal(disco, diretorio_atual, tokens[1])
+    elif cmd == "fechararquivo":
+        fechar_arquivo_terminal()
     elif cmd == "youtube":
         if len(tokens) < 2:
             print("Uso: YOUTUBE termo de busca  (ex: YOUTUBE musica top)")
@@ -2735,6 +2666,8 @@ def executar_comando(tokens, cpu, ram, disco, diretorio_atual):
             buscar_piratebay_mcp(" ".join(tokens[1:]))
     elif cmd in ("massgrave", "mas"):
         executar_massgrave()
+    elif cmd == "loja":
+        executar_loja()
     elif cmd in ("configuracoes", "painel"):
         menu_configuracoes(cpu, ram, disco, diretorio_atual)
     elif cmd == "editar":
@@ -2749,10 +2682,9 @@ def executar_comando(tokens, cpu, ram, disco, diretorio_atual):
         print()
         print("MS-PyDOS Versão 1.0")
         print()
-    elif cmd == "data":
-        print("Data atual: " + datetime.now().strftime("%d/%m/%Y"))
-    elif cmd == "hora":
-        print("Hora atual: " + datetime.now().strftime("%H:%M:%S"))
+    elif cmd == "datahora":
+        agora = datetime.now()
+        print("Data atual: " + agora.strftime("%d/%m/%Y") + "   Hora atual: " + agora.strftime("%H:%M:%S"))
     elif cmd == "vol":
         desenhar_titulo("VOLUME DO DISCO", 50)
         _pr(f"Rótulo : {disco.rotulo}")
@@ -2894,8 +2826,21 @@ def executar_comando(tokens, cpu, ram, disco, diretorio_atual):
             conteudo = " ".join(tokens[2:])
             ram.carregar(nome_arquivo, conteudo)
             disco.escrever_arquivo(nome_arquivo, conteudo)
-            disco.escrever_em_massa(ram.memoria)
             print(f"Escrito na RAM e no Disco: {nome_arquivo}")
+    elif cmd == "criararquivo":
+        if len(tokens) < 2:
+            print("Uso: CRIARARQUIVO nomearquivo.ext [conteudo]")
+            print("Ex.: CRIARARQUIVO notas.txt   |   CRIARARQUIVO script.py print('oi')")
+        else:
+            nome_digitado = tokens[1]
+            if "." not in os.path.basename(nome_digitado):
+                nome_digitado += ".txt"   # extensão padrão quando não informada
+                print(f"[AVISO] Nenhuma extensão informada, usando: {nome_digitado}")
+            nome_arquivo = obter_caminho_absoluto(nome_digitado, diretorio_atual)
+            conteudo = " ".join(tokens[2:]) if len(tokens) > 2 else ""
+            ram.carregar(nome_arquivo, conteudo)
+            disco.escrever_arquivo(nome_arquivo, conteudo)
+            print(f"Arquivo criado: {nome_digitado}")
     elif cmd == "tipo":
         if len(tokens) < 2:
             print("Uso: TIPO nomearquivo")
@@ -2903,7 +2848,6 @@ def executar_comando(tokens, cpu, ram, disco, diretorio_atual):
             nome_arquivo = obter_caminho_absoluto(tokens[1], diretorio_atual)
             print(disco.ler_arquivo(nome_arquivo))
     elif cmd == "listar":
-        disco.escrever_em_massa(ram.memoria)
         itens = disco.listar_diretorio(diretorio_atual)
         caminho_dir = "C:\\" if diretorio_atual == "/" else f"C:\\{diretorio_atual.strip('/').replace('/', chr(92)).upper()}"
         agora = datetime.now().strftime("%d-%m-%Y  %H:%M")
@@ -2942,7 +2886,6 @@ def executar_comando(tokens, cpu, ram, disco, diretorio_atual):
         else:
             caminho_pasta = obter_caminho_absoluto(tokens[1], diretorio_atual)
             disco.criar_pasta(caminho_pasta)
-            disco.escrever_em_massa(ram.memoria)
     elif cmd == "cd":
         if len(tokens) < 2:
             print("Uso: CD nomepasta")
@@ -3056,8 +2999,7 @@ def executar_comando(tokens, cpu, ram, disco, diretorio_atual):
             _pr("  Disco real: indisponível neste ambiente")
         desenhar_rodape(66)
     elif cmd == "reiniciar":
-        print("Salvando conteúdo da RAM no Disco e reiniciando...")
-        disco.escrever_em_massa(ram.memoria)
+        print("Reiniciando...")
         ram.limpar()
         inicializar()
         return diretorio_atual
@@ -3145,59 +3087,6 @@ def executar_comando(tokens, cpu, ram, disco, diretorio_atual):
                     print("Falha na alocação de memória.")
             except ValueError:
                 print("Erro: Use valores numéricos válidos.")
-    elif cmd == "criararquivoso":
-        if len(tokens) < 3:
-            print("Uso: CRIARARQUIVOSO nome pid_dono [dados]")
-        else:
-            try:
-                nome = tokens[1]
-                pid_dono = int(tokens[2])
-                dados = " ".join(tokens[3:]) if len(tokens) > 3 else ""
-                simulador_ms.criar_arquivo_so(nome, pid_dono, dados)
-            except ValueError:
-                print("Erro: PID inválido.")
-    elif cmd == "abrirarquivo":
-        if len(tokens) < 2:
-            print("Uso: ABRIRARQUIVO nome")
-        else:
-            nome = tokens[1]
-            ok = simulador_ms.abrir_arquivo_so(nome)
-            if ok:
-                conteudo = simulador_ms.ler_arquivo_so(nome)
-                desenhar_titulo(f"ARQUIVO ABERTO DENTRO DO MS-PyDOS: {nome}", 70)
-                if conteudo:
-                    for linha in conteudo.splitlines()[:200]:
-                        _pr("  " + linha)
-                else:
-                    _pr("  (arquivo vazio)")
-                desenhar_rodape(70)
-                print("Arquivo aberto integrado à interface. Use FECHARARQUIVO para fechar a aba.")
-    elif cmd == "fechararquivo":
-        if len(tokens) < 2:
-            print("Uso: FECHARARQUIVO nome")
-        else:
-            simulador_ms.fechar_arquivo_so(tokens[1])
-    elif cmd == "escreverarquivo":
-        if len(tokens) < 3:
-            print("Uso: ESCREVERARQUIVO nome dados")
-        else:
-            nome = tokens[1]
-            dados = " ".join(tokens[2:])
-            simulador_ms.escrever_arquivo_so(nome, dados)
-    elif cmd == "lerarquivo":
-        if len(tokens) < 2:
-            print("Uso: LERARQUIVO nome")
-        else:
-            conteudo = simulador_ms.ler_arquivo_so(tokens[1])
-            if conteudo is not None:
-                print(f"Conteúdo: {conteudo}")
-    elif cmd == "apagararquivo":
-        if len(tokens) < 2:
-            print("Uso: APAGARARQUIVO nome")
-        else:
-            simulador_ms.deletar_arquivo_so(tokens[1])
-    elif cmd == "listararquivos":
-        simulador_ms.listar_arquivos_so()
     elif cmd == "solicitarrecurso":
         if len(tokens) < 3:
             print("Uso: SOLICITARRECURSO pid tipo(IMPRESSORA/DISCO/FITA)")
@@ -3270,6 +3159,7 @@ def executar_comando(tokens, cpu, ram, disco, diretorio_atual):
         else:
             alvo = tokens[1]
             caminho_alvo = obter_caminho_absoluto(alvo, diretorio_atual)
+            caminho_real_alvo = disco._caminho_real(caminho_alvo)
             mudou = False
             for op in tokens[2:]:
                 if len(op) == 2 and op[0] in "+-" and op[1].upper() in "RHSA":
@@ -3281,6 +3171,14 @@ def executar_comando(tokens, cpu, ram, disco, diretorio_atual):
                         atual.discard(letra)
                     secao_attr[caminho_alvo] = sorted(atual)
                     mudou = True
+                    # +R/-R também alteram a permissão REAL do arquivo em
+                    # disco (somente leitura de verdade, não só uma flag
+                    # guardada em memória/JSON).
+                    if letra == "R" and os.path.isfile(caminho_real_alvo):
+                        try:
+                            os.chmod(caminho_real_alvo, 0o444 if op[0] == "+" else 0o644)
+                        except OSError:
+                            pass
             if mudou:
                 _gravar_secao(disco.arquivo, "atributos", secao_attr)
                 flags_atuais = "".join(secao_attr.get(caminho_alvo, [])) or "(nenhum)"
@@ -3292,16 +3190,7 @@ def executar_comando(tokens, cpu, ram, disco, diretorio_atual):
         print("Verificando unidade C:...")
         print()
         info = disco.obter_info()
-        dados_disco = disco._carregar()
-
-        def _contar_pastas(d):
-            n = 0
-            for v in d.values():
-                if isinstance(v, dict):
-                    n += 1 + _contar_pastas(v)
-            return n
-
-        n_pastas = _contar_pastas(dados_disco)
+        n_pastas = disco._contar_pastas()
         usado_bytes = info["usado_kb"] * 1024
         livre_bytes = info["livre_kb"] * 1024
         total_bytes = info["max_kb"] * 1024
@@ -3595,9 +3484,8 @@ def inicializar():
     time.sleep(0.4)
     _bp("MS-PyDOS 1.0 Installation Program".center(_LARGURA_LOGO))
     time.sleep(0.2)
-    _bp("Copyright (c) Machine Shop Inc. 1981-2026".center(_LARGURA_LOGO))
+    _bp("Copyright (c) DannyBarbosa Systems 1981-2026".center(_LARGURA_LOGO))
     time.sleep(0.15)
-    _bp("Inclui elementos do Apple ProDOS 2.4.3 (CATALOG, PREFIX)".center(_LARGURA_LOGO))
     _bp()
     time.sleep(0.5)
     for _linha_assinatura in ASSINATURA_DANIEL_BARBOSA_ITALICO:
@@ -3610,7 +3498,7 @@ def inicializar():
     time.sleep(0.6)
     _beep(1200, 90)  # beep de ligar, estilo BIOS de verdade
     time.sleep(0.4)
-    _bp("MS-PyDOS BIOS - Machine Shop Inc.")
+    _bp("MS-PyDOS BIOS - DannyBarbosa Systems")
     time.sleep(0.4)
     _bp(f"CPU: {platform.processor() or platform.machine()} "
         f"({os.cpu_count() or '?'} núcleo(s) lógico(s))")
@@ -3659,7 +3547,7 @@ def inicializar():
 
     _bp()
     _bp("MS-PyDOS Versão 1.0")
-    _bp("(C)Copyright Machine Shop Inc. - Daniel Barbosa 1981-2026. Todos os direitos reservados.")
+    _bp("(C)Copyright DannyBarbosa Systems - Daniel Barbosa 1981-2026. Todos os direitos reservados.")
     _bp()
     time.sleep(0.8)
 
