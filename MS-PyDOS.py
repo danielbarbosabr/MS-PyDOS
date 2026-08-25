@@ -1322,6 +1322,13 @@ class SimuladorSO:
         entradas = self.log if quantidade is None else self.log[-quantidade:]
         for entrada in entradas:
             _pr(entrada)
+        # Mostra comandos usados (historico)
+        _pr(COR_AMARELO + "\n--- COMANDOS USADOS (HISTORICO) ---" + COR_RESET)
+        if historico_ordenado:
+            for i, cmd_hist in enumerate(historico_ordenado[-25:], start=1):
+                _pr(f"{i:3}. {cmd_hist}")
+        else:
+            _pr("Nenhum comando registrado ainda.")
         # Mostra detalhes dos processos ativos
         _pr(COR_AMARELO + "\n--- PROCESSOS ATIVOS ---" + COR_RESET)
         for pcb in self.processos.values():
